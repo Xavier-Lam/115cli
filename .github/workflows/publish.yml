@@ -1,0 +1,50 @@
+name: Publish on tag
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip setuptools build twine
+
+      - name: Build distributions
+        run: |
+          python -m build
+
+      - name: List built files
+        run: |
+          ls -la dist || true
+
+      - name: Publish to PyPI
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload --non-interactive -u __token__ -p "$PYPI_API_TOKEN" dist/*
+
+      - name: Create GitHub Release and upload dist files
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
