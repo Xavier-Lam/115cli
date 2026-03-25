@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import shlex
-import sys
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.config import load_config
@@ -65,12 +64,8 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
         )
 
     def execute(self, args: argparse.Namespace) -> None:
-        try:
-            client = self._create_client()
-            info = client.file.download_info(args.path)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        client = self._create_client()
+        info = client.file.download_info(args.path)
 
         pairs = [
             ("url", info.url),

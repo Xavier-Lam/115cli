@@ -67,17 +67,13 @@ class LsCommand(BaseCommand):
         sort_order = SortOrder.DESC if args.desc else SortOrder.ASC
 
         client = self._create_client()
-        try:
-            entries, pagination = client.file.list(
-                args.path,
-                sort=sort_field,
-                sort_order=sort_order,
-                limit=limit,
-                offset=offset,
-            )
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        entries, pagination = client.file.list(
+            args.path,
+            sort=sort_field,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
 
         if args.long:
             _print_long(entries)

@@ -68,11 +68,7 @@ class DownloadQuotaCommand(PairFormatterMixin, BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
-        try:
-            quota = client.download.quota()
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        quota = client.download.quota()
         self.output(
             [("Remaining", quota.quota), ("Total", quota.total)],
             args,
@@ -92,11 +88,7 @@ class DownloadListCommand(ListFormatterMixin, BaseCommand):
         user_specified_page = args.page is not None
         page = args.page if args.page is not None else 1
         client = self._create_client()
-        try:
-            tasks, pagination = client.download.list(page)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        tasks, pagination = client.download.list(page)
         records = [_task_record(t) for t in tasks]
         self.output(records, args)
         if not user_specified_page and pagination.total > pagination.limit:
@@ -123,15 +115,11 @@ class DownloadAddCommand(ListFormatterMixin, BaseCommand):
         client = self._create_client()
         urls = args.urls
         dest_dir = getattr(args, "dest", None)
-        try:
-            if len(urls) == 1:
-                task = client.download.add_url(urls[0], dest_dir=dest_dir)
-                tasks = [task]
-            else:
-                tasks = client.download.add_urls(*urls, dest_dir=dest_dir)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        if len(urls) == 1:
+            task = client.download.add_url(urls[0], dest_dir=dest_dir)
+            tasks = [task]
+        else:
+            tasks = client.download.add_urls(*urls, dest_dir=dest_dir)
         records = [_task_record(t) for t in tasks]
         self.output(records, args)
 
@@ -146,10 +134,6 @@ class DownloadDeleteCommand(BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
-        try:
-            client.download.delete(*args.hashes)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        client.download.delete(*args.hashes)
         for h in args.hashes:
             print(f"Deleted: {h}")

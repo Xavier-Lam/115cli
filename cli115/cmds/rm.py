@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli115.cmds.base import BaseCommand
 
@@ -20,14 +19,10 @@ class RmCommand(BaseCommand):
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
 
-        try:
-            if len(args.paths) == 1:
-                client.file.delete(args.paths[0], recursive=args.recursive)
-            else:
-                client.file.batch_delete(*args.paths, recursive=args.recursive)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        if len(args.paths) == 1:
+            client.file.delete(args.paths[0], recursive=args.recursive)
+        else:
+            client.file.batch_delete(*args.paths, recursive=args.recursive)
 
         for path in args.paths:
             print(f"Removed: {path}")

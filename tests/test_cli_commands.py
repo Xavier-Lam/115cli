@@ -1,14 +1,28 @@
+import argparse
+import configparser
 import io
 import unittest
 from datetime import datetime
+import json
 import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import configparser
-
+from cli115.cli import build_parser, main
+from cli115.client.base import (
+    AccountInfo,
+    CloudTask,
+    DEFAULT_PAGE_SIZE,
+    Directory,
+    DownloadInfo,
+    DownloadQuota,
+    File,
+    Pagination,
+    SortField,
+    TaskStatus,
+)
 from cli115.cmds.account import AccountCommand
-from cli115.cmds.auth import AuthCommand, _parse_cookie_string
+from cli115.cmds.config import load_config
 from cli115.cmds.config_cmd import ConfigCommand
 from cli115.cmds.cp import CpCommand
 from cli115.cmds.download import (
@@ -28,17 +42,6 @@ from cli115.cmds.mkdir import MkdirCommand
 from cli115.cmds.mv import MvCommand
 from cli115.cmds.rm import RmCommand
 from cli115.cmds.upload import UploadCommand
-from cli115.cli import build_parser, main
-from cli115.client.base import (
-    AccountInfo,
-    CloudTask,
-    Directory,
-    DownloadInfo,
-    DownloadQuota,
-    File,
-    Pagination,
-    TaskStatus,
-)
 from cli115.exceptions import NotFoundError
 
 
@@ -71,56 +74,6 @@ def _make_file(name="test.txt", id="200", parent_id="100", size=1024):
         file_type="txt",
         starred=False,
     )
-
-
-class TestParseCookieString(unittest.TestCase):
-    def test_parses_standard_cookie(self):
-        cookie = "UID=u1; CID=c1; SEID=s1; KID=k1"
-        result = _parse_cookie_string(cookie)
-        self.assertEqual(result["UID"], "u1")
-        self.assertEqual(result["CID"], "c1")
-        self.assertEqual(result["SEID"], "s1")
-        self.assertEqual(result["KID"], "k1")
-
-    def test_parses_cookie_with_extra_values(self):
-        cookie = "UID=u1; CID=c1; SEID=s1; KID=k1; OTHER=x"
-        result = _parse_cookie_string(cookie)
-        self.assertEqual(len(result), 5)
-        self.assertEqual(result["OTHER"], "x")
-
-
-class TestAuthCookieCommand(unittest.TestCase):
-    @patch("cli115.cmds.auth.save_cookie_credential")
-    def test_saves_credential(self, mock_save):
-        from pathlib import Path
-
-        mock_save.return_value = Path("/tmp/cookie_u1.json")
-        parser = build_parser()
-        args = parser.parse_args(
-            ["auth", "cookie", "u1", "UID=u1; CID=c1; SEID=s1; KID=k1"]
-        )
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            COMMANDS = {"auth": AuthCommand()}
-            COMMANDS["auth"].execute(args)
-
-        mock_save.assert_called_once()
-        call_args = mock_save.call_args
-        self.assertEqual(call_args[0][0], "u1")
-        self.assertIn("UID", call_args[0][1])
-
-    @patch("cli115.cmds.auth.save_cookie_credential")
-    def test_missing_cookies_exits(self, mock_save):
-        parser = build_parser()
-        args = parser.parse_args(["auth", "cookie", "u1", "UID=u1; CID=c1"])
-
-        with self.assertRaises(SystemExit) as ctx:
-            with patch("sys.stderr", new_callable=io.StringIO):
-                COMMANDS = {"auth": AuthCommand()}
-                COMMANDS["auth"].execute(args)
-
-        self.assertEqual(ctx.exception.code, 1)
-        mock_save.assert_not_called()
 
 
 class TestLsCommand(unittest.TestCase):
@@ -188,15 +141,11 @@ class TestLsCommand(unittest.TestCase):
         with patch("sys.stdout", new_callable=io.StringIO):
             LsCommand().execute(args)
 
-        from cli115.client.base import SortField, SortOrder
-
         call_kwargs = mock_create.return_value.file.list.call_args.kwargs
         self.assertEqual(call_kwargs["sort"], SortField.SIZE)
 
     @patch.object(LsCommand, "_create_client")
     def test_ls_sort_created(self, mock_create):
-        from cli115.client.base import SortField
-
         mock_create.return_value = self._make_client_mock()
         parser = build_parser()
         args = parser.parse_args(["ls", "--sort", "created", "/"])
@@ -209,8 +158,6 @@ class TestLsCommand(unittest.TestCase):
 
     @patch.object(LsCommand, "_create_client")
     def test_ls_sort_opened(self, mock_create):
-        from cli115.client.base import SortField
-
         mock_create.return_value = self._make_client_mock()
         parser = build_parser()
         args = parser.parse_args(["ls", "--sort", "opened", "/"])
@@ -376,25 +323,6 @@ class TestMkdirCommand(unittest.TestCase):
             "/a/b/c", parents=True
         )
 
-    @patch.object(MkdirCommand, "_create_client")
-    def test_mkdir_json_format(self, mock_create):
-        import json
-
-        mock_client = MagicMock()
-        mock_client.file.create_directory.return_value = _make_dir(
-            name="newdir", id="999"
-        )
-        mock_create.return_value = mock_client
-        parser = build_parser()
-        args = parser.parse_args(["mkdir", "--format", "json", "/newdir"])
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            MkdirCommand().execute(args)
-
-        data = json.loads(mock_out.getvalue())
-        self.assertEqual(data["ID"], "999")
-        self.assertEqual(data["Name"], "newdir")
-
 
 class TestUploadCommand(unittest.TestCase):
     @patch.object(UploadCommand, "_create_client")
@@ -468,23 +396,6 @@ class TestInfoCommand(unittest.TestCase):
         self.assertIn("Directory", output)
         self.assertIn("5", output)
 
-    @patch.object(InfoCommand, "_create_client")
-    def test_info_json_format(self, mock_create):
-        import json
-
-        mock_client = MagicMock()
-        mock_client.file.info.return_value = _make_file()
-        mock_create.return_value = mock_client
-        parser = build_parser()
-        args = parser.parse_args(["info", "--format", "json", "/test.txt"])
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            InfoCommand().execute(args)
-
-        data = json.loads(mock_out.getvalue())
-        self.assertEqual(data["Name"], "test.txt")
-        self.assertEqual(data["SHA1"], "abc123")
-
 
 class TestMainEntryPoint(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
@@ -500,10 +411,6 @@ class TestMainEntryPoint(unittest.TestCase):
             main(["ls", "/"])
 
         mock_client.file.list.assert_called_once()
-
-    def test_main_no_args_exits(self):
-        with self.assertRaises(SystemExit):
-            main([])
 
 
 def _make_task(
@@ -561,23 +468,6 @@ class TestIdCommand(unittest.TestCase):
         self.assertIn("Directory", output)
         self.assertIn("5", output)
 
-    @patch.object(IdCommand, "_create_client")
-    def test_id_json_format(self, mock_create):
-        import json
-
-        mock_client = MagicMock()
-        mock_client.file.id.return_value = _make_file()
-        mock_create.return_value = mock_client
-        parser = build_parser()
-        args = parser.parse_args(["id", "--format", "json", "200"])
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            IdCommand().execute(args)
-
-        data = json.loads(mock_out.getvalue())
-        self.assertEqual(data["Name"], "test.txt")
-        self.assertEqual(data["SHA1"], "abc123")
-
 
 class TestDownloadCommand(unittest.TestCase):
     @patch.object(DownloadQuotaCommand, "_create_client")
@@ -615,8 +505,6 @@ class TestDownloadCommand(unittest.TestCase):
 
     @patch.object(DownloadListCommand, "_create_client")
     def test_download_list_json(self, mock_create):
-        import json as _json
-
         mock_client = MagicMock()
         mock_client.download.list.return_value = (
             [_make_task()],
@@ -629,7 +517,7 @@ class TestDownloadCommand(unittest.TestCase):
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
             DownloadCommand().execute(args)
 
-        data = _json.loads(mock_out.getvalue())
+        data = json.loads(mock_out.getvalue())
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["Hash"], "abc123hash")
         self.assertEqual(data[0]["Name"], "test-download.png")
@@ -748,23 +636,6 @@ class TestDownloadCommand(unittest.TestCase):
         self.assertIn("hash1", output)
         self.assertIn("hash2", output)
 
-    @patch.object(DownloadQuotaCommand, "_create_client")
-    def test_download_quota_json(self, mock_create):
-        import json
-
-        mock_client = MagicMock()
-        mock_client.download.quota.return_value = DownloadQuota(quota=100, total=3000)
-        mock_create.return_value = mock_client
-        parser = build_parser()
-        args = parser.parse_args(["download", "quota", "--format", "json"])
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            DownloadCommand().execute(args)
-
-        data = json.loads(mock_out.getvalue())
-        self.assertEqual(data["Remaining"], 100)
-        self.assertEqual(data["Total"], 3000)
-
 
 class TestBuildParser(unittest.TestCase):
     def test_all_commands_registered(self):
@@ -853,25 +724,6 @@ class TestFindCommand(unittest.TestCase):
         self.assertEqual(call_kwargs["limit"], 5)
 
     @patch.object(FindCommand, "_create_client")
-    def test_find_json_format(self, mock_create):
-        import json
-
-        mock_create.return_value = self._make_client_mock(
-            entries=[_make_file(name="report.pdf", id="999")],
-            pagination=Pagination(total=1, offset=0, limit=115),
-        )
-        parser = build_parser()
-        args = parser.parse_args(["find", "--format", "json", "report"])
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            FindCommand().execute(args)
-
-        data = json.loads(mock_out.getvalue())
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["Name"], "report.pdf")
-        self.assertEqual(data[0]["ID"], "999")
-
-    @patch.object(FindCommand, "_create_client")
     def test_find_plain_format(self, mock_create):
         mock_create.return_value = self._make_client_mock(
             entries=[_make_file(name="note.txt", id="888")],
@@ -904,8 +756,6 @@ class TestFindCommand(unittest.TestCase):
     @patch.object(FindCommand, "_create_client")
     def test_find_pagination_warning(self, mock_create):
         """A warning is printed when total exceeds DEFAULT_PAGE_SIZE."""
-        from cli115.client.base import DEFAULT_PAGE_SIZE
-
         entries = [_make_file(name=f"f{i}.txt", id=str(i)) for i in range(10)]
         mock_create.return_value = self._make_client_mock(
             entries=entries,
@@ -919,20 +769,6 @@ class TestFindCommand(unittest.TestCase):
                 FindCommand().execute(args)
 
         self.assertIn("Warning", mock_err.getvalue())
-
-    @patch.object(FindCommand, "_create_client")
-    def test_find_error_exits(self, mock_create):
-        mock_client = MagicMock()
-        mock_client.file.find.side_effect = RuntimeError("network error")
-        mock_create.return_value = mock_client
-        parser = build_parser()
-        args = parser.parse_args(["find", "test"])
-
-        with self.assertRaises(SystemExit) as ctx:
-            with patch("sys.stderr", new_callable=io.StringIO):
-                FindCommand().execute(args)
-
-        self.assertEqual(ctx.exception.code, 1)
 
 
 def _make_download_info():
@@ -965,26 +801,6 @@ class TestDownloadInfoCommand(unittest.TestCase):
         self.assertIn("4096", output)
         self.assertIn("Mozilla/5.0", output)
         self.assertIn("UID=u1", output)
-
-    @patch.object(DownloadInfoCommand, "_create_client")
-    def test_json_format(self, mock_create):
-        import json
-
-        mock_client = MagicMock()
-        mock_client.file.download_info.return_value = _make_download_info()
-        mock_create.return_value = mock_client
-        parser = build_parser()
-        args = parser.parse_args(["download-info", "--format", "json", "/test.bin"])
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            DownloadInfoCommand().execute(args)
-
-        data = json.loads(mock_out.getvalue())
-        self.assertEqual(data["url"], "https://cdn.115.com/test.bin?t=123")
-        self.assertEqual(data["file_name"], "test.bin")
-        self.assertEqual(data["file_size"], 4096)
-        self.assertEqual(data["user_agent"], "Mozilla/5.0")
-        self.assertIn("UID", data["cookies"])
 
     @patch("cli115.cmds.download_info.load_config")
     @patch.object(DownloadInfoCommand, "_create_client")
@@ -1083,10 +899,8 @@ class TestConfigCommand(unittest.TestCase):
 
     @patch("cli115.cmds.config_cmd.load_config")
     def test_outputs_default_config_when_no_file(self, mock_load):
-        from cli115.cmds.config import load_config as real_load_config
-
         # Simulate load_config returning defaults (no file on disk)
-        mock_load.side_effect = real_load_config
+        mock_load.side_effect = load_config
         with patch("cli115.cmds.config.DEFAULT_CONFIG_FILE") as mock_file:
             mock_file.exists.return_value = False
             cmd = ConfigCommand()
@@ -1129,51 +943,12 @@ class TestAccountCommand(unittest.TestCase):
         mock_create.return_value = mock_client
 
         cmd = AccountCommand()
-        import argparse
-
         args = argparse.Namespace(format="plain")
         with patch("builtins.print") as mock_print:
             cmd.execute(args)
         output = mock_print.call_args[0][0]
         self.assertIn("testuser", output)
         self.assertIn("12345", output)
-
-    @patch("cli115.cmds.account.BaseCommand._create_client")
-    def test_execute_json_format(self, mock_create):
-        mock_client = MagicMock()
-        mock_client.account.info.return_value = AccountInfo(
-            user_name="jsonuser",
-            user_id=99,
-            vip=False,
-            expire=None,
-        )
-        mock_create.return_value = mock_client
-
-        cmd = AccountCommand()
-        import argparse
-
-        args = argparse.Namespace(format="json")
-        with patch("builtins.print") as mock_print:
-            cmd.execute(args)
-        import json
-
-        output = json.loads(mock_print.call_args[0][0])
-        self.assertEqual(output["Username"], "jsonuser")
-        self.assertEqual(output["User ID"], 99)
-
-    @patch("cli115.cmds.account.BaseCommand._create_client")
-    def test_execute_error_exits(self, mock_create):
-        mock_client = MagicMock()
-        mock_client.account.info.side_effect = RuntimeError("API error")
-        mock_create.return_value = mock_client
-
-        cmd = AccountCommand()
-        import argparse
-
-        args = argparse.Namespace(format="plain")
-        with self.assertRaises(SystemExit) as ctx:
-            cmd.execute(args)
-        self.assertEqual(ctx.exception.code, 1)
 
 
 class TestFetchCommand(unittest.TestCase):

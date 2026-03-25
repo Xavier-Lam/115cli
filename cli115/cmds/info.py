@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
@@ -19,10 +18,6 @@ class InfoCommand(PairFormatterMixin, BaseCommand):
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
 
-        try:
-            entry = client.file.info(args.path)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        entry = client.file.info(args.path)
 
         self.output(format_entry(entry), args)

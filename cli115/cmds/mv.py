@@ -27,14 +27,10 @@ class MvCommand(BaseCommand):
         *src_paths, dst_path = args.paths
         client = self._create_client()
 
-        try:
-            if len(src_paths) == 1:
-                client.file.move(src_paths[0], dst_path)
-            else:
-                client.file.batch_move(*src_paths, dest_dir=dst_path)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        if len(src_paths) == 1:
+            client.file.move(src_paths[0], dst_path)
+        else:
+            client.file.batch_move(*src_paths, dest_dir=dst_path)
 
         for src in src_paths:
             print(f"Moved: {src} -> {dst_path}")

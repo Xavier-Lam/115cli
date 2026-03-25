@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
@@ -25,10 +24,6 @@ class MkdirCommand(PairFormatterMixin, BaseCommand):
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
 
-        try:
-            directory = client.file.create_directory(args.path, parents=args.parents)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        directory = client.file.create_directory(args.path, parents=args.parents)
 
         self.output(format_entry(directory), args)

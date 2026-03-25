@@ -19,9 +19,7 @@ def _find_record(entry: FileSystemEntry) -> list[tuple[str, object]]:
         size = "-"
         ftype = "dir"
     mtime = (
-        entry.modified_time.strftime("%Y-%m-%d %H:%M")
-        if entry.modified_time
-        else "-"
+        entry.modified_time.strftime("%Y-%m-%d %H:%M") if entry.modified_time else "-"
     )
     return [
         ("Name", entry.name + ("/" if entry.is_directory else "")),
@@ -38,7 +36,9 @@ class FindCommand(ListFormatterMixin, BaseCommand):
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
         parser.add_argument(
-            "path", nargs="?", default=None,
+            "path",
+            nargs="?",
+            default=None,
             help="Directory to search within (default: global search)",
         )
         parser.add_argument("keyword", help="Search keyword")
@@ -55,16 +55,12 @@ class FindCommand(ListFormatterMixin, BaseCommand):
         limit = args.limit if args.limit is not None else DEFAULT_PAGE_SIZE
 
         client = self._create_client()
-        try:
-            entries, pagination = client.file.find(
-                args.keyword,
-                path=args.path,
-                limit=limit,
-                offset=offset,
-            )
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        entries, pagination = client.file.find(
+            args.keyword,
+            path=args.path,
+            limit=limit,
+            offset=offset,
+        )
 
         records = [_find_record(e) for e in entries]
         self.output(records, args)

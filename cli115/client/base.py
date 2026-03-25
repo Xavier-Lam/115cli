@@ -151,8 +151,6 @@ class LazyPathMixin:
         val = self.__dict__.get("path")
         if val is not None:
             return val
-        if self._file_client is None:
-            return None
         parts = [self.name]
         parent_id = self.parent_id
         while parent_id and parent_id != "0":

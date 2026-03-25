@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
-from cli115.exceptions import InstantUploadNotAvailableError
 
 
 class UploadCommand(PairFormatterMixin, BaseCommand):
@@ -41,17 +39,10 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         except Exception:
             pass
 
-        try:
-            result = client.file.upload(
-                remote_path,
-                args.local_path,
-                instant_only=args.instant_only,
-            )
-        except InstantUploadNotAvailableError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        result = client.file.upload(
+            remote_path,
+            args.local_path,
+            instant_only=args.instant_only,
+        )
 
         self.output(format_entry(result), args)

@@ -6,6 +6,8 @@ import argparse
 import sys
 from http.cookies import SimpleCookie
 
+from cli115.auth.cookie import CookieAuth
+from cli115.client import create_client
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.config import save_cookie_credential
 
@@ -44,9 +46,18 @@ class AuthCookieCommand(BaseCommand):
             )
             sys.exit(1)
 
-        cred_path = save_cookie_credential(args.user, cookies)
-        print(f"Credential saved to {cred_path}")
-        print(f"Active credential set to cookie_{args.user}.json")
+        # Validate the saved cookie by calling account info
+        auth = CookieAuth(
+            uid=cookies["UID"],
+            cid=cookies["CID"],
+            seid=cookies["SEID"],
+            kid=cookies["KID"],
+        )
+        client = create_client(auth)
+        account = client.account.info()
+        print(f"Authenticated as {account.user_name} (User ID: {account.user_id})")
+
+        save_cookie_credential(args.user, cookies)
 
 
 def _parse_cookie_string(cookie_str: str) -> dict[str, str]:
