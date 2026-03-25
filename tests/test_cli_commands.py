@@ -34,6 +34,7 @@ from cli115.client.base import (
     Pagination,
     TaskStatus,
 )
+from cli115.exceptions import NotFoundError
 
 
 def _make_dir(name="testdir", id="100", parent_id="0", file_count=5):
@@ -394,6 +395,7 @@ class TestUploadCommand(unittest.TestCase):
     @patch.object(UploadCommand, "_create_client")
     def test_upload(self, mock_create):
         mock_client = MagicMock()
+        mock_client.file.info.side_effect = NotFoundError("Not found")
         mock_client.file.upload.return_value = _make_file(name="uploaded.txt")
         mock_create.return_value = mock_client
         parser = build_parser()
@@ -408,6 +410,23 @@ class TestUploadCommand(unittest.TestCase):
         output = mock_out.getvalue()
         self.assertIn("abc123", output)
         self.assertIn("1024", output)
+
+    @patch.object(UploadCommand, "_create_client")
+    def test_upload_to_directory(self, mock_create):
+        mock_client = MagicMock()
+        # remote path resolves to a directory
+        mock_client.file.info.return_value = _make_dir(name="remotedir", id="300")
+        mock_client.file.upload.return_value = _make_file(name="uploaded.txt")
+        mock_create.return_value = mock_client
+        parser = build_parser()
+        args = parser.parse_args(["upload", "/local/path/file.txt", "/remote/dir"])
+
+        with patch("sys.stdout", new_callable=io.StringIO):
+            UploadCommand().execute(args)
+
+        mock_client.file.upload.assert_called_once_with(
+            "/remote/dir/file.txt", "/local/path/file.txt", instant_only=False
+        )
 
 
 class TestInfoCommand(unittest.TestCase):

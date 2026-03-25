@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from cli115.cmds.base import BaseCommand
@@ -29,9 +30,20 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
 
+        # If remote path points to an existing directory, append the
+        # local filename to form the final destination path.
+        remote_path = args.remote_path
+        try:
+            entry = client.file.info(remote_path)
+            if entry.is_directory:
+                file_name = os.path.basename(args.local_path)
+                remote_path = remote_path.rstrip("/") + "/" + file_name
+        except Exception:
+            pass
+
         try:
             result = client.file.upload(
-                args.remote_path,
+                remote_path,
                 args.local_path,
                 instant_only=args.instant_only,
             )
