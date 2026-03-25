@@ -146,6 +146,13 @@ class FormatterMixin(ABC):
     def get_formatters(self) -> dict[str, type[PairFormatter | ListFormatter]]:
         return {}
 
+    def get_formatter(
+        self, name: str, args: argparse.Namespace
+    ) -> PairFormatter | ListFormatter:
+        formatters = self.get_formatters()
+        formatter_cls = formatters.get(name)
+        return formatter_cls()
+
     def register(self, parser: argparse.ArgumentParser) -> None:
         self.add_format_argument(parser)
 
@@ -162,8 +169,7 @@ class FormatterMixin(ABC):
 
     def output(self, pairs: list[tuple[str, object]], args: argparse.Namespace) -> None:
         """Print *pairs* formatted according to ``args.format``."""
-        formatters = self.get_formatters()
-        formatter = formatters[args.format]()
+        formatter = self.get_formatter(args.format, args)
         print(formatter.format(pairs))
 
 

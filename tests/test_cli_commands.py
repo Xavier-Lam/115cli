@@ -1,6 +1,8 @@
 import io
 import unittest
 from datetime import datetime
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import configparser
@@ -17,6 +19,7 @@ from cli115.cmds.download import (
     DownloadQuotaCommand,
 )
 from cli115.cmds.download_info import DownloadInfoCommand
+from cli115.cmds.fetch import FetchCommand
 from cli115.cmds.id import IdCommand
 from cli115.cmds.info import InfoCommand
 from cli115.cmds.find import FindCommand
@@ -990,7 +993,6 @@ class TestDownloadInfoCommand(unittest.TestCase):
         cfg["download"] = {
             "min_split_size": "2M",
             "max_connection": "10",
-            "validate_hash": "true",
         }
         mock_load_config.return_value = cfg
         mock_client = MagicMock()
@@ -1009,11 +1011,34 @@ class TestDownloadInfoCommand(unittest.TestCase):
         self.assertIn("-k2M", output)
         self.assertIn("-x10", output)
         self.assertIn("-s10", output)
-        self.assertIn(f"--checksum=sha-1={_make_download_info().sha1}", output)
+        self.assertNotIn("--checksum", output)
         self.assertIn("User-Agent: Mozilla/5.0", output)
         self.assertIn("Referer: https://115.com", output)
         self.assertIn("UID=u1", output)
         self.assertIn("https://cdn.115.com/test.bin?t=123", output)
+
+    @patch("cli115.cmds.download_info.load_config")
+    @patch.object(DownloadInfoCommand, "_create_client")
+    def test_aria2c_format_with_check_integrity(self, mock_create, mock_load_config):
+        cfg = configparser.ConfigParser()
+        cfg["download"] = {
+            "min_split_size": "2M",
+            "max_connection": "10",
+        }
+        mock_load_config.return_value = cfg
+        mock_client = MagicMock()
+        mock_client.file.download_info.return_value = _make_download_info()
+        mock_create.return_value = mock_client
+        parser = build_parser()
+        args = parser.parse_args(
+            ["download-info", "--format", "aria2c", "--check-integrity", "/test.bin"]
+        )
+
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            DownloadInfoCommand().execute(args)
+
+        output = mock_out.getvalue()
+        self.assertIn(f"--checksum=sha-1={_make_download_info().sha1}", output)
 
 
 class TestConfigCommand(unittest.TestCase):
@@ -1024,7 +1049,6 @@ class TestConfigCommand(unittest.TestCase):
         config["download"] = {
             "min_split_size": "2M",
             "max_connection": "10",
-            "validate_hash": "true",
         }
         mock_load.return_value = config
 
@@ -1045,7 +1069,6 @@ class TestConfigCommand(unittest.TestCase):
         config["download"] = {
             "min_split_size": "2M",
             "max_connection": "10",
-            "validate_hash": "true",
         }
         mock_load.return_value = config
 
@@ -1057,7 +1080,6 @@ class TestConfigCommand(unittest.TestCase):
         output = mock_out.getvalue()
         self.assertIn("min_split_size", output)
         self.assertIn("max_connection", output)
-        self.assertIn("validate_hash", output)
 
     @patch("cli115.cmds.config_cmd.load_config")
     def test_outputs_default_config_when_no_file(self, mock_load):
@@ -1084,7 +1106,6 @@ class TestConfigCommand(unittest.TestCase):
         config["download"] = {
             "min_split_size": "2M",
             "max_connection": "10",
-            "validate_hash": "true",
         }
         mock_load.return_value = config
 
@@ -1153,6 +1174,156 @@ class TestAccountCommand(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             cmd.execute(args)
         self.assertEqual(ctx.exception.code, 1)
+
+
+class TestFetchCommand(unittest.TestCase):
+    def _make_mock_client(self, file=None):
+        if file is None:
+            file = _make_file(name="remote.bin", size=1024)
+        mock_client = MagicMock()
+        mock_client.file.info.return_value = file
+        return mock_client
+
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_saves_file(self, mock_create):
+        mock_client = self._make_mock_client()
+        mock_create.return_value = mock_client
+        chunk = b"x" * 1024
+        mock_remote = MagicMock()
+        mock_remote.__enter__ = lambda s: s
+        mock_remote.__exit__ = MagicMock(return_value=False)
+        mock_remote.read.side_effect = [chunk, b""]
+        mock_client.file.fetch.return_value = mock_remote
+
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "/remote/remote.bin"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                    FetchCommand().execute(args)
+                self.assertTrue(os.path.exists("remote.bin"))
+                self.assertIn("remote.bin", mock_out.getvalue())
+            finally:
+                os.chdir(orig_dir)
+
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_custom_output_path(self, mock_create):
+        mock_client = self._make_mock_client()
+        mock_create.return_value = mock_client
+        mock_remote = MagicMock()
+        mock_remote.__enter__ = lambda s: s
+        mock_remote.__exit__ = MagicMock(return_value=False)
+        mock_remote.read.side_effect = [b"x" * 1024, b""]
+        mock_client.file.fetch.return_value = mock_remote
+
+        parser = build_parser()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = os.path.join(tmpdir, "custom.bin")
+            args = parser.parse_args(["fetch", "/remote/remote.bin", "-o", out_path])
+            with patch("sys.stdout", new_callable=io.StringIO):
+                FetchCommand().execute(args)
+            self.assertTrue(os.path.exists(out_path))
+
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_output_to_directory_uses_remote_name(self, mock_create):
+        mock_client = self._make_mock_client()
+        mock_create.return_value = mock_client
+        mock_remote = MagicMock()
+        mock_remote.__enter__ = lambda s: s
+        mock_remote.__exit__ = MagicMock(return_value=False)
+        mock_remote.read.side_effect = [b"x" * 1024, b""]
+        mock_client.file.fetch.return_value = mock_remote
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            parser = build_parser()
+            args = parser.parse_args(["fetch", "/remote/remote.bin", "-o", tmpdir])
+            with patch("sys.stdout", new_callable=io.StringIO):
+                FetchCommand().execute(args)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "remote.bin")))
+
+    @patch("cli115.cmds.fetch.sha1_file")
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_check_integrity_passes(self, mock_create, mock_sha1):
+        file = _make_file(name="remote.bin", size=1024)
+        mock_client = self._make_mock_client(file=file)
+        mock_create.return_value = mock_client
+        mock_sha1.return_value = (file.sha1, file.size)
+        mock_remote = MagicMock()
+        mock_remote.__enter__ = lambda s: s
+        mock_remote.__exit__ = MagicMock(return_value=False)
+        mock_remote.read.side_effect = [b"x" * 1024, b""]
+        mock_client.file.fetch.return_value = mock_remote
+
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                    FetchCommand().execute(args)
+                self.assertIn("Checking file integrity", mock_out.getvalue())
+            finally:
+                os.chdir(orig_dir)
+
+    @patch("cli115.cmds.fetch.sha1_file")
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_check_integrity_size_mismatch_raises(self, mock_create, mock_sha1):
+        file = _make_file(name="remote.bin", size=1024)
+        mock_client = self._make_mock_client(file=file)
+        mock_create.return_value = mock_client
+        mock_sha1.return_value = (file.sha1, 512)
+        mock_remote = MagicMock()
+        mock_remote.__enter__ = lambda s: s
+        mock_remote.__exit__ = MagicMock(return_value=False)
+        mock_remote.read.side_effect = [b"x" * 1024, b""]
+        mock_client.file.fetch.return_value = mock_remote
+
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with self.assertRaises(ValueError) as ctx:
+                    with patch("sys.stdout", new_callable=io.StringIO):
+                        FetchCommand().execute(args)
+                self.assertIn("Size mismatch", str(ctx.exception))
+            finally:
+                os.chdir(orig_dir)
+
+    @patch("cli115.cmds.fetch.sha1_file")
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_check_integrity_sha1_mismatch_raises(self, mock_create, mock_sha1):
+        file = _make_file(name="remote.bin", size=1024)
+        mock_client = self._make_mock_client(file=file)
+        mock_create.return_value = mock_client
+        mock_sha1.return_value = ("wrong_sha1", file.size)
+        mock_remote = MagicMock()
+        mock_remote.__enter__ = lambda s: s
+        mock_remote.__exit__ = MagicMock(return_value=False)
+        mock_remote.read.side_effect = [b"x" * 1024, b""]
+        mock_client.file.fetch.return_value = mock_remote
+
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with self.assertRaises(ValueError) as ctx:
+                    with patch("sys.stdout", new_callable=io.StringIO):
+                        FetchCommand().execute(args)
+                self.assertIn("SHA1 mismatch", str(ctx.exception))
+            finally:
+                os.chdir(orig_dir)
 
 
 if __name__ == "__main__":

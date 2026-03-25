@@ -43,6 +43,10 @@ pip install 115cli
 115cli download-info /path/to/file
 115cli download-info --format aria2c /path/to/file
 
+# 下载
+115cli fetch /path/to/file.mp4
+115cli fetch /path/to/file.mp4 -o /local/save/path.mp4
+
 # 上传(支持秒传)
 115cli upload /local/file.txt /remote/dir/file.txt
 # 仅秒传
@@ -94,6 +98,10 @@ print(info.name, info.size, info.sha1)
 dl = client.file.download_info("/path/to/file.txt")
 print(dl.url)
 
+# 下载
+with client.file.fetch("/path/to/file.txt") as rf:
+    data = rf.read(1024)  # 仅下载前1024字节
+
 # 上传
 result = client.file.upload("/remote/dir/", "/local/file.txt")
 
@@ -107,7 +115,7 @@ tasks, _ = client.download.list()
 项目仍在早期,计划包括但不限于:
 
 - 更完善的云下载管理 (包括验证码处理)
-- 多线程下载加速 (类似 `fetch` 命令)
+- 多线程下载加速
 - 回收站管理
 - 手机验证码登录 (补充 cookie 登录)
 

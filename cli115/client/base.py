@@ -9,6 +9,8 @@ from enum import Enum
 from os import PathLike
 from typing import BinaryIO, Callable
 
+import httpx
+
 
 DEFAULT_PAGE_SIZE = 115  # Default number of items to return in list operations
 MAX_PAGE_SIZE = 1150  # 1150 is the maximum page size allowed by the API
@@ -247,6 +249,93 @@ class DownloadInfo:
     user_agent: str
     referer: str
     cookies: str
+
+
+class RemoteFile:
+    """A file-like object that lazily reads content from a remote URL.
+
+    The file is not downloaded until :meth:`read` is called.  Range headers
+    are used when reading partial content so the full file is never buffered
+    in memory.
+    """
+
+    def __init__(self, info: DownloadInfo) -> None:
+        self._info = info
+        self._pos = 0
+        self._size = info.file_size
+        self._client = None
+
+    # -- helpers --
+
+    def _ensure_client(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(
+                headers={
+                    "User-Agent": self._info.user_agent,
+                    "Cookie": self._info.cookies,
+                    "Referer": self._info.referer,
+                },
+                follow_redirects=True,
+            )
+        return self._client
+
+    # -- file-like interface --
+
+    @property
+    def name(self) -> str:
+        return self._info.file_name
+
+    def readable(self) -> bool:
+        return True
+
+    def writable(self) -> bool:
+        return False
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 0:
+            self._pos = offset
+        elif whence == 1:
+            self._pos += offset
+        elif whence == 2:
+            self._pos = self._size + offset
+        else:
+            raise ValueError(f"invalid whence: {whence}")
+        self._pos = max(0, min(self._pos, self._size))
+        return self._pos
+
+    def read(self, size: int = -1) -> bytes:
+        if self._pos >= self._size:
+            return b""
+        client = self._ensure_client()
+        start = self._pos
+        if size < 0:
+            end = self._size - 1
+        else:
+            end = min(start + size - 1, self._size - 1)
+        headers = {"Range": f"bytes={start}-{end}"}
+        resp = client.get(self._info.url, headers=headers)
+        resp.raise_for_status()
+        data = resp.content
+        self._pos += len(data)
+        return data
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
 
 
 @dataclass(frozen=True)
@@ -495,6 +584,22 @@ class FileClient(ABC):
         Returns:
             A DownloadInfo with URL, user-agent, cookies, and file metadata.
         """
+
+    def fetch(self, path: str | File) -> RemoteFile:
+        """Get a lazy file-like object for a remote file.
+
+        The returned :class:`RemoteFile` supports ``read``, ``seek`` and
+        ``tell``.  Content is only downloaded when :meth:`~RemoteFile.read`
+        is called, and Range headers are used for partial reads.
+
+        Args:
+            path: Path to the file or a :class:`File` object.
+
+        Returns:
+            A :class:`RemoteFile` wrapping the download URL.
+        """
+        info = self.download_info(path)
+        return RemoteFile(info)
 
 
 class DownloadClient(ABC):

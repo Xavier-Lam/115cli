@@ -29,6 +29,8 @@ setup(
     python_requires=">=3.12",
     install_requires=[
         "p115client>=0.0.8",
+        "httpx",
+        "tqdm",
     ],
     entry_points={
         "console_scripts": [

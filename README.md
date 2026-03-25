@@ -43,6 +43,10 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli download-info /path/to/file
 115cli download-info --format aria2c /path/to/file
 
+# Download a file to local disk
+115cli fetch /path/to/file.mp4
+115cli fetch /path/to/file.mp4 -o /local/save/path.mp4
+
 # Upload (support instant upload)
 115cli upload /local/file.txt /remote/dir/file.txt
 # Upload with instant upload only
@@ -94,6 +98,10 @@ print(info.name, info.size, info.sha1)
 dl = client.file.download_info("/path/to/file.txt")
 print(dl.url)
 
+# Fetch a remote file as a lazy file-like object
+with client.file.fetch("/path/to/file.txt") as rf:
+    data = rf.read(1024)   # only downloads the first 1024 bytes
+
 # Upload
 result = client.file.upload("/remote/dir/", "/local/file.txt")
 
@@ -109,7 +117,7 @@ tasks, _ = client.download.list()
 The project aims to cover the core features of 115 cloud storage. Planned additions include:
 
 - **Cloud download management:** Full management of offline download tasks including captcha support.
-- **Multi-threaded download:** A `115cli fetch` command to download files with multi-thread acceleration.
+- **Multi-threaded download:** Multi-thread acceleration for the `115cli fetch` command.
 - **Recycle bin management:** List, restore, and permanently delete items from the recycle bin.
 - **Mobile phone authentication:** SMS-based login in addition to cookie auth.
 

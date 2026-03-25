@@ -14,12 +14,12 @@ from cli115.cmds.formatter import PairFormatter, PairFormatterMixin
 class Aria2cFormatter(PairFormatter):
     """Format download info as an aria2c command-line invocation."""
 
-    def __init__(self):
+    def __init__(self, check_integrity: bool = False):
         config = load_config()
         download = config["download"]
         self._min_split_size = download["min_split_size"]
         self._max_connection = download["max_connection"]
-        self._validate_hash = download.getboolean("validate_hash", True)
+        self._check_integrity = check_integrity
 
     def format(self, pairs: list[tuple[str, object]]) -> str:
         d = dict(pairs)
@@ -31,7 +31,7 @@ class Aria2cFormatter(PairFormatter):
             f"-x{self._max_connection}",
             f"-s{self._max_connection}",
         ]
-        if self._validate_hash:
+        if self._check_integrity:
             parts.append("--checksum=sha-1={sha1}".format(sha1=d["sha1"]))
         parts += [
             "-o",
@@ -58,6 +58,11 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
         parser.add_argument("path", help="Path to the file")
+        parser.add_argument(
+            "--check-integrity",
+            action="store_true",
+            help="Include SHA-1 checksum in aria2c output",
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         try:
@@ -77,3 +82,8 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
             ("cookies", info.cookies),
         ]
         self.output(pairs, args)
+
+    def get_formatter(self, name, args):
+        if name == "aria2c":
+            return Aria2cFormatter(check_integrity=args.check_integrity)
+        return super().get_formatter(name, args)

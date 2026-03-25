@@ -10,6 +10,7 @@ from cli115.cmds.config_cmd import ConfigCommand
 from cli115.cmds.cp import CpCommand
 from cli115.cmds.download import DownloadCommand
 from cli115.cmds.download_info import DownloadInfoCommand
+from cli115.cmds.fetch import FetchCommand
 from cli115.cmds.id import IdCommand
 from cli115.cmds.info import InfoCommand
 from cli115.cmds.find import FindCommand
@@ -32,6 +33,7 @@ COMMANDS: dict[str, BaseCommand] = {
     "upload": UploadCommand(),
     "info": InfoCommand(),
     "id": IdCommand(),
+    "fetch": FetchCommand(),
     "download": DownloadCommand(),
     "download-info": DownloadInfoCommand(),
 }

@@ -30,12 +30,13 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          115CLI_TEST_COOKIE: ${{ matrix.python-version == '3.14' && secrets.TEST_COOKIE || '' }}
+          TEST_COOKIE_115CLI: ${{ matrix.python-version == '3.14' && secrets.TEST_COOKIE || '' }}
         run: |
           python -m coverage run -m unittest discover -s tests -p "test_*.py" -v
           python -m coverage xml
 
       - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.14'
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
