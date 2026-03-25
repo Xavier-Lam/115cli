@@ -47,3 +47,8 @@ class WAFBlockedError(APIError):
     Wait a while before retrying.  The error may manifest either as an HTTP 405
     response (WAF intercepts the request at the HTTP level).
     """
+
+
+class InstantUploadNotAvailableError(APIError):
+    """Raised when instant upload is requested but the file is not available
+    on the server (i.e. the file has never been uploaded before)."""

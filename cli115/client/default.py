@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import warnings
 from os import PathLike
+from property import locked_cacheproperty
 from typing import BinaryIO, Callable
 
 from httpcore_request import HTTPStatusError
@@ -23,6 +25,7 @@ from cli115.client.base import (
     FileClient,
     FileSystemEntry,
     MAX_PAGE_SIZE,
+    MIN_INSTANT_UPLOAD_SIZE,
     new_lazy_cls,
     Pagination,
     Progress,
@@ -35,16 +38,21 @@ from cli115.client.utils import (
     normalize_path,
     parse_item,
     parse_ts,
+    sha1_file,
 )
 from cli115.exceptions import (
+    AlreadyExistsError,
     DirectoryNotEmptyError,
+    InstantUploadNotAvailableError,
     NotFoundError,
     WAFBlockedError,
 )
 
 
-class _WAFAwareP115Client(P115Client):
-    """P115Client subclass that converts Aliyun WAF 405 blocks to WAFBlockedError."""
+class _115Client(P115Client):
+    """
+    A wrapper around P115Client to add WAF block detection and userkey correction.
+    """
 
     def request(
         self,
@@ -75,6 +83,15 @@ class _WAFAwareP115Client(P115Client):
                 ) from exc
             raise
 
+    @locked_cacheproperty
+    def user_key(self) -> str:
+        # fetch userkey via /app/uploadinfo (works with web cookies) to avoid
+        # the default /android/2.0/user/upload_key endpoint which requires
+        # app-specific cookies (errno 99).
+        resp = self.upload_info()
+        check_response(resp)
+        return resp["userkey"]
+
     @staticmethod
     def _is_waf_blocked(exc: HTTPStatusError) -> bool:
         """Return True if the error is an Aliyun WAF block (HTTP 405 with WAF body)."""
@@ -88,7 +105,7 @@ class DefaultClient(Client):
 
     def __init__(self, auth: Auth):
         self._auth = auth
-        self._api = _WAFAwareP115Client(auth.get_cookies())
+        self._api = _115Client(auth.get_cookies())
         self._file = DefaultFileClient(self)
         self._download = DefaultDownloadClient(self)
 
@@ -251,27 +268,77 @@ class DefaultFileClient(FileClient):
         instant_only: bool = False,
         progress_callback: Callable[[Progress], object] | None = None,
     ) -> File:
-        if instant_only:
-            raise NotImplementedError("instant_only upload is not yet supported")
-
-        path = normalize_path(path)
-        parent_path, filename = path.rsplit("/", 1)
-        parent_path = parent_path or "/"
-        dir_id = self._client._resolve_dir_id(parent_path)
 
         opened = None
         if isinstance(file, (str, PathLike)):
             opened = open(file, "rb")
             file = opened
         try:
-            resp = self._client._api.upload_file_sample(
+            return self._upload(
+                path,
                 file,
-                pid=dir_id,
-                filename=filename,
+                instant_only=instant_only,
             )
         finally:
             if opened is not None:
                 opened.close()
+
+    def _upload(
+        self,
+        path: str,
+        file: BinaryIO,
+        instant_only: bool,
+    ) -> File:
+        path = normalize_path(path)
+
+        # raise an error if the file already exists
+        try:
+            self.info(path)
+        except NotFoundError:
+            pass
+        else:
+            raise AlreadyExistsError(f"File already exists: {path}", errno=0)
+
+        parent_path = os.path.dirname(path)
+        filename = os.path.basename(path)
+        dir_id = self._client._resolve_dir_id(parent_path)
+
+        sha1, file_size = sha1_file(file)
+
+        # Only attempt instant upload when the file meets the minimum size.
+        if file_size >= MIN_INSTANT_UPLOAD_SIZE:
+            try:
+                success = self._try_instant_upload(
+                    file=file,
+                    filename=filename,
+                    file_size=file_size,
+                    sha1=sha1,
+                    dir_id=dir_id,
+                    path=path,
+                )
+            except Exception as exc:
+                if instant_only:
+                    raise
+                warnings.warn(
+                    f"Instant upload failed ({exc}); falling back to " "normal upload",
+                    stacklevel=2,
+                )
+            else:
+                if success:
+                    return self.info(path)
+                if instant_only:
+                    raise InstantUploadNotAvailableError(
+                        "Instant upload is not available for this file "
+                        "(file not found on server)",
+                        errno=0,
+                    )
+            file.seek(0)
+
+        resp = self._client._api.upload_file_sample(
+            file,
+            pid=dir_id,
+            filename=filename,
+        )
         resp = check_response(resp)
         data = resp.get("data", {})
 
@@ -287,6 +354,35 @@ class DefaultFileClient(FileClient):
             sha1=data.get("sha1", ""),
             size=int(data.get("file_size", 0)),
         )
+
+    def _try_instant_upload(
+        self,
+        *,
+        file: BinaryIO,
+        filename: str,
+        file_size: int,
+        sha1: str,
+        dir_id: str,
+        path: str,
+    ) -> bool:
+        """Attempt instant upload.  Return `True` on success, `False` if the
+        server does not have this file and a regular upload is required."""
+
+        def read_range(range_str: str) -> bytes:
+            # sign_check format is "start-end" (inclusive), like HTTP Range.
+            start, end = [int(x) for x in range_str.split("-")]
+            file.seek(start)
+            return file.read(end - start + 1)
+
+        resp = self._client._api.upload_file_init(
+            filename=filename,
+            filesize=file_size,
+            filesha1=sha1,
+            read_range_bytes_or_hash=(read_range if file_size >= 1024 * 1024 else None),
+            pid=dir_id,
+        )
+
+        return bool(resp.get("reuse"))
 
     def delete(self, path: str | FileSystemEntry, *, recursive: bool = False) -> None:
         entry = self._resolve_entry(path)

@@ -11,7 +11,8 @@ from typing import BinaryIO, Callable
 
 
 DEFAULT_PAGE_SIZE = 115  # Default number of items to return in list operations
-MAX_PAGE_SIZE = 1150  # 1150 is the maximum allowed by the API
+MAX_PAGE_SIZE = 1150  # 1150 is the maximum page size allowed by the API
+MIN_INSTANT_UPLOAD_SIZE = 2 * 1024 * 1024  # Minimum file size for instant upload
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
@@ -361,15 +362,21 @@ class FileClient(ABC):
     ) -> File:
         """Upload a file.
 
+        Instant upload is always attempted first when the file is at
+        least :data:`MIN_INSTANT_UPLOAD_SIZE` bytes: if the server already has
+        a copy matched by SHA-1, the upload completes without transferring data.
+
         Args:
             path: Full destination path on the remote disk, including the
                   target filename (e.g. ``"/backups/archive.tar.gz"``). The
                   parent directory must already exist.
             file: A local file path (str / PathLike) or a readable
                   binary file-like object.
-            instant_only: If ``True``, only attempt an instant
-                  (hash-based) upload without transferring data.
-                  Currently raises ``NotImplementedError``.
+            instant_only: If ``True``, only attempt instant upload for files
+                  at or above :data:`MIN_INSTANT_UPLOAD_SIZE`.  Files below
+                  that threshold are uploaded normally.  Raises
+                  :class:`~cli115.exceptions.InstantUploadNotAvailableError`
+                  when instant upload is unavailable for a large-enough file.
             progress_callback: Optional callable invoked periodically
                   with a :class:`Progress` instance.
 

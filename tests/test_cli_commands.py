@@ -403,7 +403,7 @@ class TestUploadCommand(unittest.TestCase):
             UploadCommand().execute(args)
 
         mock_client.file.upload.assert_called_once_with(
-            "/remote/file.txt", "/local/file.txt"
+            "/remote/file.txt", "/local/file.txt", instant_only=False
         )
         output = mock_out.getvalue()
         self.assertIn("abc123", output)

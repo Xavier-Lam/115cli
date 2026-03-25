@@ -40,8 +40,10 @@ pip install 115cli
 115cli download-info /path/to/file
 115cli download-info --format aria2c /path/to/file
 
-# 上传
-115cli upload /local/file.txt /remote/dir/
+# 上传(支持秒传)
+115cli upload /local/file.txt /remote/dir/file.txt
+# 仅秒传
+115cli upload --instant-only /local/file.txt /remote/dir/file.txt
 
 # 离线下载
 115cli download quota
@@ -101,7 +103,6 @@ tasks, _ = client.download.list()
 
 项目仍在早期,计划包括但不限于:
 
-- 秒传支持 (通过 SHA-1 跳过已存在文件)
 - 更完善的云下载管理 (包括验证码处理)
 - 多线程下载加速 (类似 `fetch` 命令)
 - 回收站管理

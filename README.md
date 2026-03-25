@@ -40,8 +40,10 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli download-info /path/to/file
 115cli download-info --format aria2c /path/to/file
 
-# Upload
-115cli upload /local/file.txt /remote/dir/
+# Upload (support instant upload)
+115cli upload /local/file.txt /remote/dir/file.txt
+# Upload with instant upload only
+115cli upload --instant-only /local/file.txt /remote/dir/file.txt
 
 # Cloud download (offline download)
 115cli download quota
@@ -103,7 +105,6 @@ tasks, _ = client.download.list()
 
 The project aims to cover the core features of 115 cloud storage. Planned additions include:
 
-- **Instant upload:** Skip uploading files that already exist in the cloud using SHA-1 matching.
 - **Cloud download management:** Full management of offline download tasks including captcha support.
 - **Multi-threaded download:** A `115cli fetch` command to download files with multi-thread acceleration.
 - **Recycle bin management:** List, restore, and permanently delete items from the recycle bin.

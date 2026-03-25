@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
+from typing import BinaryIO
 
 from cli115.client.base import Directory, File
 from cli115.exceptions import (
@@ -97,3 +99,22 @@ def normalize_path(path: str) -> str:
     if not path.startswith("/"):
         path = "/" + path
     return path.rstrip("/")
+
+
+_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB
+
+
+def sha1_file(file: BinaryIO) -> tuple[str, int]:
+    file.seek(0)
+    try:
+        h = hashlib.sha1()
+        size = 0
+        while True:
+            chunk = file.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            h.update(chunk)
+            size += len(chunk)
+        return h.hexdigest().upper(), size
+    finally:
+        file.seek(0)

@@ -61,12 +61,9 @@ class BaseTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cookie_str = os.environ.get(
-            "115CLI_TEST_COOKIE",
-            "",
-        )
+        cookie_str = os.environ.get("TEST_COOKIE_115CLI", "")
         if not cookie_str:
-            raise unittest.SkipTest("115CLI_TEST_COOKIE not set")
+            raise unittest.SkipTest("TEST_COOKIE_115CLI not set")
 
         cookies = _parse_cookie_string(cookie_str)
         uid = cookies.get("UID", "")
@@ -75,8 +72,21 @@ class BaseTestCase(unittest.TestCase):
         kid = cookies.get("KID", "")
         if not all([uid, cid, seid, kid]):
             raise unittest.SkipTest(
-                "115CLI_TEST_COOKIE must contain UID, CID, SEID, KID"
+                "TEST_COOKIE_115CLI must contain UID, CID, SEID, KID"
             )
+
+        # Replace httpcore_request's default session with an HTTPProxy if
+        # HTTP_PROXY / HTTPS_PROXY is set.  httpcore.ConnectionPool does
+        # NOT read proxy environment variables automatically.
+        import httpcore
+        import httpcore_request as _httpcore_request
+
+        proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+        if proxy_url:
+            proxy_pool = httpcore.HTTPProxy(
+                proxy_url, http2=True, max_connections=128, retries=5
+            )
+            _httpcore_request._DEFAULT_CLIENT = proxy_pool
 
         auth = CookieAuth(uid=uid, cid=cid, seid=seid, kid=kid)
         cls.client = create_client(auth)
@@ -84,8 +94,6 @@ class BaseTestCase(unittest.TestCase):
         # Patch httpcore_request.request to sleep 0.05 s before every HTTP
         # request.  This global rate-limit prevents triggering the Aliyun WAF
         # that blocks repeated requests sent in rapid succession (HTTP 405).
-        import httpcore_request as _httpcore_request
-
         _orig_request = _httpcore_request.request
 
         def _rate_limited_request(*args, **kwargs):

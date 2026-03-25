@@ -7,6 +7,7 @@ import sys
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
+from cli115.exceptions import InstantUploadNotAvailableError
 
 
 class UploadCommand(PairFormatterMixin, BaseCommand):
@@ -16,12 +17,27 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         super().register(parser)
         parser.add_argument("local_path", help="Local file path")
         parser.add_argument("remote_path", help="Remote destination path")
+        parser.add_argument(
+            "--instant-only",
+            action="store_true",
+            help=(
+                "Only attempt instant (hash-based) upload. "
+                "Files smaller than 2 MB are still uploaded normally."
+            ),
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
 
         try:
-            result = client.file.upload(args.remote_path, args.local_path)
+            result = client.file.upload(
+                args.remote_path,
+                args.local_path,
+                instant_only=args.instant_only,
+            )
+        except InstantUploadNotAvailableError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
