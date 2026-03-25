@@ -23,6 +23,9 @@ pip install 115cli
 After [authenticating](#authentication) with `115cli auth`, you can use the `115cli` command to interact with your 115 cloud storage. Here are some examples of available commands:
 
 ```bash
+# Account info
+115cli account
+
 # List files
 115cli ls /
 115cli ls /path/to/dir -l

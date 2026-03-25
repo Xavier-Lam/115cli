@@ -23,6 +23,9 @@ pip install 115cli
 常见示例:
 
 ```bash
+# 账户信息
+115cli account
+
 # 目录
 115cli ls /
 115cli ls /path/to/dir -l

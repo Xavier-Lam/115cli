@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import warnings
+from datetime import datetime
 from os import PathLike
 from property import locked_cacheproperty
 from typing import BinaryIO, Callable
@@ -13,6 +14,8 @@ from p115client import P115Client
 
 from cli115.auth.base import Auth
 from cli115.client.base import (
+    AccountClient,
+    AccountInfo,
     Client,
     CloudTask,
     DEFAULT_PAGE_SIZE,
@@ -101,13 +104,37 @@ class _115Client(P115Client):
         return "aliyun.com" in body_text or "alicdn.com" in body_text
 
 
+class DefaultAccountClient(AccountClient):
+
+    def __init__(self, client: DefaultClient):
+        self._client = client
+
+    def info(self) -> AccountInfo:
+        resp = self._client._api.user_my()
+        check_response(resp)
+        data = resp.get("data", {})
+        expire_ts = data.get("expire")
+        expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
+        return AccountInfo(
+            user_name=data.get("user_name", ""),
+            user_id=int(data.get("user_id", 0)),
+            vip=bool(data.get("vip", 0)),
+            expire=expire,
+        )
+
+
 class DefaultClient(Client):
 
     def __init__(self, auth: Auth):
         self._auth = auth
         self._api = _115Client(auth.get_cookies())
+        self._account = DefaultAccountClient(self)
         self._file = DefaultFileClient(self)
         self._download = DefaultDownloadClient(self)
+
+    @property
+    def account(self) -> AccountClient:
+        return self._account
 
     @property
     def file(self) -> FileClient:

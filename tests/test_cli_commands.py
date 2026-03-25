@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import configparser
 
+from cli115.cmds.account import AccountCommand
 from cli115.cmds.auth import AuthCommand, _parse_cookie_string
 from cli115.cmds.config_cmd import ConfigCommand
 from cli115.cmds.cp import CpCommand
@@ -26,6 +27,7 @@ from cli115.cmds.rm import RmCommand
 from cli115.cmds.upload import UploadCommand
 from cli115.cli import build_parser, main
 from cli115.client.base import (
+    AccountInfo,
     CloudTask,
     Directory,
     DownloadInfo,
@@ -1090,6 +1092,67 @@ class TestConfigCommand(unittest.TestCase):
             main(["config"])
 
         self.assertIn("[general]", mock_out.getvalue())
+
+
+class TestAccountCommand(unittest.TestCase):
+
+    @patch("cli115.cmds.account.BaseCommand._create_client")
+    def test_execute_prints_account_info(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="testuser",
+            user_id=12345,
+            vip=True,
+            expire=datetime(2025, 1, 1),
+        )
+        mock_create.return_value = mock_client
+
+        cmd = AccountCommand()
+        import argparse
+
+        args = argparse.Namespace(format="plain")
+        with patch("builtins.print") as mock_print:
+            cmd.execute(args)
+        output = mock_print.call_args[0][0]
+        self.assertIn("testuser", output)
+        self.assertIn("12345", output)
+
+    @patch("cli115.cmds.account.BaseCommand._create_client")
+    def test_execute_json_format(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="jsonuser",
+            user_id=99,
+            vip=False,
+            expire=None,
+        )
+        mock_create.return_value = mock_client
+
+        cmd = AccountCommand()
+        import argparse
+
+        args = argparse.Namespace(format="json")
+        with patch("builtins.print") as mock_print:
+            cmd.execute(args)
+        import json
+
+        output = json.loads(mock_print.call_args[0][0])
+        self.assertEqual(output["Username"], "jsonuser")
+        self.assertEqual(output["User ID"], 99)
+
+    @patch("cli115.cmds.account.BaseCommand._create_client")
+    def test_execute_error_exits(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.account.info.side_effect = RuntimeError("API error")
+        mock_create.return_value = mock_client
+
+        cmd = AccountCommand()
+        import argparse
+
+        args = argparse.Namespace(format="plain")
+        with self.assertRaises(SystemExit) as ctx:
+            cmd.execute(args)
+        self.assertEqual(ctx.exception.code, 1)
 
 
 if __name__ == "__main__":

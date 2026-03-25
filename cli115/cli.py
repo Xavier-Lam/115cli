@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from cli115.cmds.base import BaseCommand
+from cli115.cmds.account import AccountCommand
 from cli115.cmds.auth import AuthCommand
 from cli115.cmds.config_cmd import ConfigCommand
 from cli115.cmds.cp import CpCommand
@@ -19,6 +20,7 @@ from cli115.cmds.rm import RmCommand
 from cli115.cmds.upload import UploadCommand
 
 COMMANDS: dict[str, BaseCommand] = {
+    "account": AccountCommand(),
     "auth": AuthCommand(),
     "config": ConfigCommand(),
     "ls": LsCommand(),

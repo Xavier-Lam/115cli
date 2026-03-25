@@ -249,8 +249,30 @@ class DownloadInfo:
     cookies: str
 
 
+@dataclass(frozen=True)
+class AccountInfo:
+    """Account information for the authenticated user.
+
+    Attributes:
+        user_name: Display name of the user.
+        user_id: Numeric user ID.
+        vip: Whether the user currently has VIP status.
+        expire: VIP expiry datetime, or ``None`` if not available.
+    """
+
+    user_name: str
+    user_id: int
+    vip: bool
+    expire: datetime | None
+
+
 class Client(ABC):
     """Abstract high-level client interface."""
+
+    @property
+    @abstractmethod
+    def account(self) -> AccountClient:
+        """Access account operations."""
 
     @property
     @abstractmethod
@@ -535,4 +557,16 @@ class DownloadClient(ABC):
 
         Args:
             task_hashes: info_hash values of tasks to delete.
+        """
+
+
+class AccountClient(ABC):
+    """Abstract interface for account operations."""
+
+    @abstractmethod
+    def info(self) -> AccountInfo:
+        """Get account information for the authenticated user.
+
+        Returns:
+            An AccountInfo with user name, user ID, VIP status and expiry.
         """
