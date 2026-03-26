@@ -13,11 +13,18 @@ from cli115.cmds.formatter import PairFormatter, PairFormatterMixin
 class Aria2cFormatter(PairFormatter):
     """Format download info as an aria2c command-line invocation."""
 
-    def __init__(self, check_integrity: bool = False):
+    def __init__(
+        self,
+        check_integrity: bool = False,
+        min_split_size: str | None = None,
+        max_connection: int | None = None,
+    ):
         config = load_config()
         download = config["download"]
-        self._min_split_size = download["min_split_size"]
-        self._max_connection = download["max_connection"]
+        self._min_split_size = min_split_size or download["min_split_size"]
+        self._max_connection = (
+            str(max_connection) if max_connection else download["max_connection"]
+        )
         self._check_integrity = check_integrity
 
     def format(self, pairs: list[tuple[str, object]]) -> str:
@@ -62,6 +69,19 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
             action="store_true",
             help="Include SHA-1 checksum in aria2c output",
         )
+        parser.add_argument(
+            "-k",
+            "--min-split-size",
+            default=None,
+            help="Min split size for aria2c (overrides config, e.g. '8M')",
+        )
+        parser.add_argument(
+            "-x",
+            "--max-connections",
+            type=int,
+            default=None,
+            help="Max connections to download the file",
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
@@ -80,5 +100,9 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
 
     def get_formatter(self, name, args):
         if name == "aria2c":
-            return Aria2cFormatter(check_integrity=args.check_integrity)
+            return Aria2cFormatter(
+                check_integrity=args.check_integrity,
+                min_split_size=args.min_split_size,
+                max_connection=args.max_connections,
+            )
         return super().get_formatter(name, args)

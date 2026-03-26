@@ -968,7 +968,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.__enter__ = lambda s: s
         mock_remote.__exit__ = MagicMock(return_value=False)
         mock_remote.read.side_effect = [chunk, b""]
-        mock_client.file.fetch.return_value = mock_remote
+        mock_client.file.open.return_value = mock_remote
 
         parser = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin"])
@@ -992,7 +992,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.__enter__ = lambda s: s
         mock_remote.__exit__ = MagicMock(return_value=False)
         mock_remote.read.side_effect = [b"x" * 1024, b""]
-        mock_client.file.fetch.return_value = mock_remote
+        mock_client.file.open.return_value = mock_remote
 
         parser = build_parser()
 
@@ -1004,6 +1004,14 @@ class TestFetchCommand(unittest.TestCase):
             self.assertTrue(os.path.exists(out_path))
 
     @patch.object(FetchCommand, "_create_client")
+    def test_fetch_custom_chunk_size(self, mock_create):
+        mock_client = self._make_mock_client()
+        mock_create.return_value = mock_client
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "/remote/remote.bin", "--chunk-size", "4MB"])
+        self.assertEqual(args.chunk_size, 4 * 1024 * 1024)
+
+    @patch.object(FetchCommand, "_create_client")
     def test_fetch_output_to_directory_uses_remote_name(self, mock_create):
         mock_client = self._make_mock_client()
         mock_create.return_value = mock_client
@@ -1011,7 +1019,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.__enter__ = lambda s: s
         mock_remote.__exit__ = MagicMock(return_value=False)
         mock_remote.read.side_effect = [b"x" * 1024, b""]
-        mock_client.file.fetch.return_value = mock_remote
+        mock_client.file.open.return_value = mock_remote
 
         with tempfile.TemporaryDirectory() as tmpdir:
             parser = build_parser()
@@ -1031,7 +1039,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.__enter__ = lambda s: s
         mock_remote.__exit__ = MagicMock(return_value=False)
         mock_remote.read.side_effect = [b"x" * 1024, b""]
-        mock_client.file.fetch.return_value = mock_remote
+        mock_client.file.open.return_value = mock_remote
 
         parser = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
@@ -1057,7 +1065,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.__enter__ = lambda s: s
         mock_remote.__exit__ = MagicMock(return_value=False)
         mock_remote.read.side_effect = [b"x" * 1024, b""]
-        mock_client.file.fetch.return_value = mock_remote
+        mock_client.file.open.return_value = mock_remote
 
         parser = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
@@ -1084,7 +1092,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.__enter__ = lambda s: s
         mock_remote.__exit__ = MagicMock(return_value=False)
         mock_remote.read.side_effect = [b"x" * 1024, b""]
-        mock_client.file.fetch.return_value = mock_remote
+        mock_client.file.open.return_value = mock_remote
 
         parser = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])

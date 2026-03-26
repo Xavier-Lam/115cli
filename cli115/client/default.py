@@ -32,6 +32,7 @@ from cli115.client.base import (
     new_lazy_cls,
     Pagination,
     Progress,
+    RemoteFile,
     SortField,
     SortOrder,
     TaskStatus,
@@ -360,6 +361,8 @@ class DefaultFileClient(FileClient):
                         errno=0,
                     )
             file.seek(0)
+            if isinstance(file, RemoteFile):
+                file.set_stream(True)  # use streaming upload for RemoteFile
 
         resp = self._client._api.upload_file_sample(
             file,

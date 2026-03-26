@@ -3,6 +3,7 @@
 import argparse
 import sys
 
+from cli115.__version__ import __version__
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.account import AccountCommand
 from cli115.cmds.auth import AuthCommand
@@ -42,6 +43,9 @@ COMMANDS: dict[str, BaseCommand] = {
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="115cli", description="CLI tool for 115 netdisk"
+    )
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

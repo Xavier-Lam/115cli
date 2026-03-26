@@ -168,7 +168,7 @@ class LazyPathMixin:
 
 def new_lazy_cls(item: FileSystemEntry, client: FileClient) -> FileSystemEntry:
     cls = item.__class__
-    cls = type(f"Lazy{cls.__name__}", (LazyPathMixin, cls), {})
+    cls = type(cls.__name__, (LazyPathMixin, cls), {})
     attrs = {f.name: getattr(item, f.name) for f in fields(item)}
     rv = cls(**attrs)
     rv._file_client = client
@@ -252,9 +252,10 @@ class DownloadInfo:
 class RemoteFile:
     """A file-like object that lazily reads content from a remote URL.
 
-    The file is not downloaded until :meth:`read` is called.  Range headers
-    are used when reading partial content so the full file is never buffered
-    in memory.
+    By default, Range headers are used for partial reads.  Call
+    :meth:`set_stream` to switch to httpx streaming mode, which reads the
+    file sequentially via :meth:`httpx.Response.iter_bytes` without using
+    Range headers.
     """
 
     def __init__(self, info: DownloadInfo) -> None:
@@ -262,6 +263,10 @@ class RemoteFile:
         self._pos = 0
         self._size = info.file_size
         self._client = None
+        self._stream = False
+        self._stream_context = None
+        self._stream_resp = None
+        self._stream_iter = None
 
     # -- helpers --
 
@@ -277,11 +282,44 @@ class RemoteFile:
             )
         return self._client
 
+    def _ensure_stream(self):
+        if self._stream_context is None:
+            client = self._ensure_client()
+            self._stream_context = client.stream("GET", self._info.url)
+            resp = self._stream_context.__enter__()
+            resp.raise_for_status()
+            self._stream_resp = resp
+        return self._stream_resp
+
+    def _close_stream(self) -> None:
+        if self._stream_context is not None:
+            self._stream_context.__exit__(None, None, None)
+            self._stream_context = None
+            self._stream_resp = None
+            self._stream_iter = None
+
+    # -- stream flag --
+
+    def set_stream(self, enable: bool) -> None:
+        """Enable or disable httpx streaming mode.
+
+        When enabled, :meth:`read` uses :meth:`httpx.Response.iter_bytes`
+        instead of Range headers.  Disabling after a stream has been opened
+        closes the active stream.
+        """
+        self._stream = enable
+        if not enable:
+            self._close_stream()
+
     # -- file-like interface --
 
     @property
     def name(self) -> str:
         return self._info.file_name
+
+    @property
+    def size(self) -> int:
+        return self._size
 
     def readable(self) -> bool:
         return True
@@ -310,6 +348,13 @@ class RemoteFile:
     def read(self, size: int = -1) -> bytes:
         if self._pos >= self._size:
             return b""
+        if self._stream:
+            resp = self._ensure_stream()
+            if self._stream_iter is None:
+                self._stream_iter = resp.iter_bytes(size if size > 0 else None)
+            data = next(self._stream_iter, b"")
+            self._pos += len(data)
+            return data
         client = self._ensure_client()
         start = self._pos
         if size < 0:
@@ -324,6 +369,7 @@ class RemoteFile:
         return data
 
     def close(self) -> None:
+        self._close_stream()
         if self._client is not None:
             self._client.close()
             self._client = None
@@ -583,7 +629,7 @@ class FileClient(ABC):
             A DownloadInfo with URL, user-agent, cookies, and file metadata.
         """
 
-    def fetch(self, path: str | File) -> RemoteFile:
+    def open(self, path: str | File) -> RemoteFile:
         """Get a lazy file-like object for a remote file.
 
         The returned :class:`RemoteFile` supports ``read``, ``seek`` and
