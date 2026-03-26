@@ -24,7 +24,7 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 
 ```bash
 # Authenticate with cookies
-115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 
 # Account info
 115cli account
@@ -69,7 +69,7 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli currently only supports cookie-based authentication. Obtain your cookies from the browser after logging into [115.com](https://115.com). You need the `UID`, `CID`, `SEID`, and `KID` cookie values.
 
 ```bash
-115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 ```
 
 ### Python API

@@ -24,7 +24,7 @@ pip install 115cli
 
 ```bash
 # 使用 cookie 登录
-115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 
 # 账户信息
 115cli account
@@ -69,7 +69,7 @@ pip install 115cli
 本项目目前只支持通过浏览器拿到的 cookie 登录.登录时需要提供 `UID`, `CID`, `SEID` 和 `KID` 四个 cookie 值.
 
 ```bash
-115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 ```
 
 ## Client API

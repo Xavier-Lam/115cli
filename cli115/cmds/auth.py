@@ -29,14 +29,38 @@ class AuthCommand(BaseCommand):
 
 
 class AuthCookieCommand(BaseCommand):
-    """Save cookie credentials for a user."""
+    """Save cookie credentials for the authenticated user (user_name from account)."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("user", help="User identifier (UID)")
-        parser.add_argument("cookie_value", help="Cookie string from browser")
+        parser.add_argument(
+            "cookie_value",
+            nargs="?",
+            help="Cookie string from browser",
+        )
+        parser.add_argument("--uid", help="UID cookie value")
+        parser.add_argument("--cid", help="CID cookie value")
+        parser.add_argument("--seid", help="SEID cookie value")
+        parser.add_argument("--kid", help="KID cookie value")
 
     def execute(self, args: argparse.Namespace) -> None:
-        cookies = _parse_cookie_string(args.cookie_value)
+        # Determine cookies: prefer `cookie_value` if provided, otherwise
+        # use the four individual cookie flags.
+        if args.cookie_value:
+            cookies = _parse_cookie_string(args.cookie_value)
+        else:
+            if not (args.uid and args.cid and args.seid and args.kid):
+                print(
+                    "Error: Provide either a cookie string or all of --uid, --cid, --seid, --kid",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            cookies = {
+                "UID": args.uid,
+                "CID": args.cid,
+                "SEID": args.seid,
+                "KID": args.kid,
+            }
+
         required = {"UID", "CID", "SEID", "KID"}
         missing = required - set(cookies.keys())
         if missing:
@@ -57,7 +81,7 @@ class AuthCookieCommand(BaseCommand):
         account = client.account.info()
         print(f"Authenticated as {account.user_name} (User ID: {account.user_id})")
 
-        save_cookie_credential(args.user, cookies)
+        save_cookie_credential(account.user_name, cookies)
 
 
 def _parse_cookie_string(cookie_str: str) -> dict[str, str]:
