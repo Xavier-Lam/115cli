@@ -4,7 +4,7 @@ import configparser
 import json
 from pathlib import Path
 
-from cli115.client.base import DEFAULT_USER_AGENT
+from cli115.client.webapi import DEFAULT_USER_AGENT
 
 DEFAULT_CONFIG_DIR = Path.home() / ".115cli"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.ini"
@@ -76,7 +76,7 @@ def load_current_credential() -> dict:
 
     if not current_file.exists():
         raise FileNotFoundError(
-            "No active credential found. Use '115cli auth cookie' to set up authentication."
+            "No active credential found. Use '115cli auth cookie' to log in."
         )
 
     cred_filename = current_file.read_text().strip()
@@ -85,7 +85,7 @@ def load_current_credential() -> dict:
     if not cred_path.exists():
         raise FileNotFoundError(
             f"Credential file '{cred_filename}' not found. "
-            "Use '115cli auth cookie' to set up authentication."
+            "Use '115cli auth cookie' to log in."
         )
 
     with open(cred_path) as f:

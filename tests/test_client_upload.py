@@ -5,8 +5,7 @@ import unittest.mock
 import uuid
 import warnings
 
-from cli115.client import default as client_base
-from cli115.client import File
+from cli115.client import File, webapi
 from cli115.exceptions import AlreadyExistsError, InstantUploadNotAvailableError
 from tests.base import TEST_ROOT, BaseTestCase
 
@@ -42,14 +41,14 @@ class TestInstantUpload(BaseTestCase):
     _INSTANT_SHA1 = hashlib.sha1(_INSTANT_CONTENT).hexdigest().upper()
     _MINIMUN_INSTANT_CONTENT = b"a" * 64 * 1024
     _MINIMUM_INSTANT_SHA1 = hashlib.sha1(_MINIMUN_INSTANT_CONTENT).hexdigest().upper()
-    _ORIGINAL_MIN_INSTANT_SIZE = client_base.MIN_INSTANT_UPLOAD_SIZE
+    _ORIGINAL_MIN_INSTANT_SIZE = webapi.MIN_INSTANT_UPLOAD_SIZE
 
     def setUp(self):
         super().setUp()
-        client_base.MIN_INSTANT_UPLOAD_SIZE = 64 * 1024
+        webapi.MIN_INSTANT_UPLOAD_SIZE = 64 * 1024
 
     def tearDown(self):
-        client_base.MIN_INSTANT_UPLOAD_SIZE = self._ORIGINAL_MIN_INSTANT_SIZE
+        webapi.MIN_INSTANT_UPLOAD_SIZE = self._ORIGINAL_MIN_INSTANT_SIZE
         super().tearDown()
 
     def _upload_path(self) -> str:

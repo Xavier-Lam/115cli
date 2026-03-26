@@ -1,5 +1,5 @@
-from cli115.client.base import (
-    Client,
+from cli115.client.base import Client
+from cli115.client.models import (
     Directory,
     File,
     FileSystemEntry,

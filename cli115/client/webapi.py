@@ -1,11 +1,10 @@
-"""Default client implementation backed by p115client."""
+"""WebAPI client implementation backed by p115client."""
 
 from __future__ import annotations
 
 import os
 import warnings
 from datetime import datetime
-from os import PathLike
 from property import locked_cacheproperty
 from typing import BinaryIO, Callable
 
@@ -19,7 +18,6 @@ from cli115.client.base import (
     Client,
     CloudTask,
     DEFAULT_PAGE_SIZE,
-    DEFAULT_USER_AGENT,
     Directory,
     DownloadClient,
     DownloadInfo,
@@ -33,10 +31,8 @@ from cli115.client.base import (
     Pagination,
     Progress,
     RemoteFile,
-    SortField,
-    SortOrder,
-    TaskStatus,
 )
+from cli115.client.models import SortField, SortOrder, TaskStatus
 from cli115.client.utils import (
     check_response,
     normalize_path,
@@ -53,85 +49,25 @@ from cli115.exceptions import (
 )
 
 
-class _115Client(P115Client):
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+)
+
+
+class WebAPIClient(Client):
+    """High-level 115 client backed by the web API.
+
+    Although it is named ``WebAPIClient``, a few of its APIs may come from
+    other sources, such as the mobile phone app.
     """
-    A wrapper around P115Client to add WAF block detection and userkey correction.
-    """
-
-    def request(
-        self,
-        /,
-        url,
-        method="GET",
-        payload=None,
-        *,
-        ecdh_encrypt=False,
-        request=None,
-        async_=False,
-        **request_kwargs,
-    ):
-        try:
-            return super().request(
-                url,
-                method,
-                payload,
-                ecdh_encrypt=ecdh_encrypt,
-                request=request,
-                async_=async_,
-                **request_kwargs,
-            )
-        except HTTPStatusError as exc:
-            if self._is_waf_blocked(exc):
-                raise WAFBlockedError(
-                    "Request blocked by Aliyun WAF; try again later"
-                ) from exc
-            raise
-
-    @locked_cacheproperty
-    def user_key(self) -> str:
-        # fetch userkey via /app/uploadinfo (works with web cookies) to avoid
-        # the default /android/2.0/user/upload_key endpoint which requires
-        # app-specific cookies (errno 99).
-        resp = self.upload_info()
-        check_response(resp)
-        return resp["userkey"]
-
-    @staticmethod
-    def _is_waf_blocked(exc: HTTPStatusError) -> bool:
-        """Return True if the error is an Aliyun WAF block (HTTP 405 with WAF body)."""
-        if exc.code != 405 or exc.headers["Content-Type"] != "text/html":
-            return False
-        body_text = exc.response_body.decode("utf-8", errors="replace")
-        return "aliyun.com" in body_text or "alicdn.com" in body_text
-
-
-class DefaultAccountClient(AccountClient):
-
-    def __init__(self, client: DefaultClient):
-        self._client = client
-
-    def info(self) -> AccountInfo:
-        resp = self._client._api.user_my()
-        check_response(resp)
-        data = resp.get("data", {})
-        expire_ts = data.get("expire")
-        expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
-        return AccountInfo(
-            user_name=data.get("user_name", ""),
-            user_id=int(data.get("user_id", 0)),
-            vip=bool(data.get("vip", 0)),
-            expire=expire,
-        )
-
-
-class DefaultClient(Client):
 
     def __init__(self, auth: Auth):
         self._auth = auth
         self._api = _115Client(auth.get_cookies())
-        self._account = DefaultAccountClient(self)
-        self._file = DefaultFileClient(self)
-        self._download = DefaultDownloadClient(self)
+        self._account = WebAPIAccountClient(self)
+        self._file = WebAPIFileClient(self)
+        self._download = WebAPIDownloadClient(self)
 
     @property
     def account(self) -> AccountClient:
@@ -160,9 +96,28 @@ class DefaultClient(Client):
         return dir_id
 
 
-class DefaultFileClient(FileClient):
+class WebAPIAccountClient(AccountClient):
 
-    def __init__(self, client: DefaultClient):
+    def __init__(self, client: WebAPIClient):
+        self._client = client
+
+    def info(self) -> AccountInfo:
+        resp = self._client._api.user_my()
+        check_response(resp)
+        data = resp.get("data", {})
+        expire_ts = data.get("expire")
+        expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
+        return AccountInfo(
+            user_name=data.get("user_name", ""),
+            user_id=int(data.get("user_id", 0)),
+            vip=bool(data.get("vip", 0)),
+            expire=expire,
+        )
+
+
+class WebAPIFileClient(FileClient):
+
+    def __init__(self, client: WebAPIClient):
         self._client = client
 
     # -- public API --
@@ -288,34 +243,13 @@ class DefaultFileClient(FileClient):
             open_time=None,
         )
 
-    def upload(
-        self,
-        path: str,
-        file: str | PathLike[str] | BinaryIO,
-        *,
-        instant_only: bool = False,
-        progress_callback: Callable[[Progress], object] | None = None,
-    ) -> File:
-
-        opened = None
-        if isinstance(file, (str, PathLike)):
-            opened = open(file, "rb")
-            file = opened
-        try:
-            return self._upload(
-                path,
-                file,
-                instant_only=instant_only,
-            )
-        finally:
-            if opened is not None:
-                opened.close()
-
     def _upload(
         self,
         path: str,
         file: BinaryIO,
-        instant_only: bool,
+        *,
+        instant_only: bool = False,
+        progress_callback: Callable[[Progress], object] | None = None,
     ) -> File:
         path = normalize_path(path)
 
@@ -554,9 +488,9 @@ def _parse_task(task: dict) -> CloudTask:
     )
 
 
-class DefaultDownloadClient(DownloadClient):
+class WebAPIDownloadClient(DownloadClient):
 
-    def __init__(self, client: DefaultClient):
+    def __init__(self, client: WebAPIClient):
         self._client = client
 
     def quota(self) -> DownloadQuota:
@@ -630,3 +564,55 @@ class DefaultDownloadClient(DownloadClient):
         """Fetch the first page of tasks and return a dict keyed by info_hash."""
         tasks, _ = self.list(page=1)
         return {t.info_hash: t for t in tasks}
+
+
+class _115Client(P115Client):
+    """
+    A wrapper around P115Client to add WAF block detection and userkey correction.
+    """
+
+    def request(
+        self,
+        /,
+        url,
+        method="GET",
+        payload=None,
+        *,
+        ecdh_encrypt=False,
+        request=None,
+        async_=False,
+        **request_kwargs,
+    ):
+        try:
+            return super().request(
+                url,
+                method,
+                payload,
+                ecdh_encrypt=ecdh_encrypt,
+                request=request,
+                async_=async_,
+                **request_kwargs,
+            )
+        except HTTPStatusError as exc:
+            if self._is_waf_blocked(exc):
+                raise WAFBlockedError(
+                    "Request blocked by Aliyun WAF; try again later"
+                ) from exc
+            raise
+
+    @locked_cacheproperty
+    def user_key(self) -> str:
+        # fetch userkey via /app/uploadinfo (works with web cookies) to avoid
+        # the default /android/2.0/user/upload_key endpoint which requires
+        # app-specific cookies (errno 99).
+        resp = self.upload_info()
+        check_response(resp)
+        return resp["userkey"]
+
+    @staticmethod
+    def _is_waf_blocked(exc: HTTPStatusError) -> bool:
+        """Return True if the error is an Aliyun WAF block (HTTP 405 with WAF body)."""
+        if exc.code != 405 or exc.headers["Content-Type"] != "text/html":
+            return False
+        body_text = exc.response_body.decode("utf-8", errors="replace")
+        return "aliyun.com" in body_text or "alicdn.com" in body_text

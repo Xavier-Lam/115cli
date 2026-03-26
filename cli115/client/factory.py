@@ -2,7 +2,7 @@
 
 from cli115.auth import Auth
 from cli115.client.base import Client
-from cli115.client.default import DefaultClient
+from cli115.client.webapi import WebAPIClient
 
 
 def create_client(auth: Auth) -> Client:
@@ -17,4 +17,4 @@ def create_client(auth: Auth) -> Client:
     Returns:
         A Client instance.
     """
-    return DefaultClient(auth)
+    return WebAPIClient(auth)

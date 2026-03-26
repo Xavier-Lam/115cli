@@ -2,7 +2,8 @@ import random
 import time
 import unittest
 
-from cli115.client.base import CloudTask, Directory, DownloadQuota, TaskStatus
+from cli115.client.base import CloudTask, Directory, DownloadQuota
+from cli115.client.models import TaskStatus
 from tests.base import BaseTestCase
 
 

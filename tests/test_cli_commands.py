@@ -18,9 +18,8 @@ from cli115.client.base import (
     DownloadQuota,
     File,
     Pagination,
-    SortField,
-    TaskStatus,
 )
+from cli115.client.models import SortField, TaskStatus
 from cli115.cmds.account import AccountCommand
 from cli115.cmds.config import load_config
 from cli115.cmds.config_cmd import ConfigCommand

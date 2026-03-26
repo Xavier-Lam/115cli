@@ -104,7 +104,7 @@ class BaseTestCase(unittest.TestCase):
         patcher.start()
         cls.addClassCleanup(patcher.stop)
 
-        # Hijack _resolve_dir_id on the DefaultClient so that TEST_ROOT is
+        # Hijack _resolve_dir_id on the WebAPIClient so that TEST_ROOT is
         # resolved directly from the cached id (no extra network call).
         _orig = cls.client._resolve_dir_id
 
