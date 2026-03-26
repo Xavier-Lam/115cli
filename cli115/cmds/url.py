@@ -53,7 +53,7 @@ class Aria2cFormatter(PairFormatter):
         return " ".join(shlex.quote(p) for p in parts)
 
 
-class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
+class UrlCommand(PairFormatterMixin, BaseCommand):
     """Get download URL and headers for a file."""
 
     def get_formatters(self):
@@ -85,7 +85,7 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
-        info = client.file.download_info(args.path)
+        info = client.file.url(args.path)
 
         pairs = [
             ("url", info.url),

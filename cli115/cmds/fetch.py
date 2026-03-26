@@ -39,7 +39,7 @@ class FetchCommand(BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
-        info = client.file.info(args.path)
+        info = client.file.stat(args.path)
         output = args.output
         if not output:
             output = info.name

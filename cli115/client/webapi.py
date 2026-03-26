@@ -11,28 +11,32 @@ from typing import BinaryIO, Callable
 from httpcore_request import HTTPStatusError
 from p115client import P115Client
 
-from cli115.auth.base import Auth
+from cli115.auth import Auth
 from cli115.client.base import (
     AccountClient,
-    AccountInfo,
     Client,
-    CloudTask,
     DEFAULT_PAGE_SIZE,
-    Directory,
     DownloadClient,
-    DownloadInfo,
-    DownloadQuota,
-    File,
     FileClient,
-    FileSystemEntry,
     MAX_PAGE_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
     new_lazy_cls,
-    Pagination,
-    Progress,
     RemoteFile,
 )
-from cli115.client.models import SortField, SortOrder, TaskStatus
+from cli115.client.models import (
+    AccountInfo,
+    CloudTask,
+    Directory,
+    DownloadUrl,
+    DownloadQuota,
+    File,
+    FileSystemEntry,
+    Pagination,
+    Progress,
+    SortField,
+    SortOrder,
+    TaskStatus,
+)
 from cli115.client.utils import (
     check_response,
     normalize_path,
@@ -131,7 +135,7 @@ class WebAPIFileClient(FileClient):
         item = parse_item(data[0])
         return new_lazy_cls(item, self)
 
-    def info(self, path: str) -> Directory | File:
+    def stat(self, path: str) -> Directory | File:
         return self._resolve_entry(path)
 
     def list(
@@ -243,111 +247,6 @@ class WebAPIFileClient(FileClient):
             open_time=None,
         )
 
-    def _upload(
-        self,
-        path: str,
-        file: BinaryIO,
-        *,
-        instant_only: bool = False,
-        progress_callback: Callable[[Progress], object] | None = None,
-    ) -> File:
-        path = normalize_path(path)
-
-        # raise an error if the file already exists
-        try:
-            self.info(path)
-        except NotFoundError:
-            pass
-        else:
-            raise AlreadyExistsError(f"File already exists: {path}", errno=0)
-
-        parent_path = os.path.dirname(path)
-        filename = os.path.basename(path)
-        dir_id = self._client._resolve_dir_id(parent_path)
-
-        sha1, file_size = sha1_file(file)
-
-        # Only attempt instant upload when the file meets the minimum size.
-        if file_size >= MIN_INSTANT_UPLOAD_SIZE:
-            try:
-                success = self._try_instant_upload(
-                    file=file,
-                    filename=filename,
-                    file_size=file_size,
-                    sha1=sha1,
-                    dir_id=dir_id,
-                    path=path,
-                )
-            except Exception as exc:
-                if instant_only:
-                    raise
-                warnings.warn(
-                    f"Instant upload failed ({exc}); falling back to " "normal upload",
-                    stacklevel=2,
-                )
-            else:
-                if success:
-                    return self.info(path)
-                if instant_only:
-                    raise InstantUploadNotAvailableError(
-                        "Instant upload is not available for this file "
-                        "(file not found on server)",
-                        errno=0,
-                    )
-            file.seek(0)
-            if isinstance(file, RemoteFile):
-                file.set_stream(True)  # use streaming upload for RemoteFile
-
-        resp = self._client._api.upload_file_sample(
-            file,
-            pid=dir_id,
-            filename=filename,
-        )
-        resp = check_response(resp)
-        data = resp.get("data", {})
-
-        return File(
-            id=str(data.get("file_id", "")),
-            parent_id=str(dir_id),
-            name=data.get("file_name", ""),
-            path=path,
-            pickcode=data.get("pick_code", ""),
-            created_time=parse_ts(data.get("file_ptime")),
-            modified_time=None,
-            open_time=None,
-            sha1=data.get("sha1", ""),
-            size=int(data.get("file_size", 0)),
-        )
-
-    def _try_instant_upload(
-        self,
-        *,
-        file: BinaryIO,
-        filename: str,
-        file_size: int,
-        sha1: str,
-        dir_id: str,
-        path: str,
-    ) -> bool:
-        """Attempt instant upload.  Return `True` on success, `False` if the
-        server does not have this file and a regular upload is required."""
-
-        def read_range(range_str: str) -> bytes:
-            # sign_check format is "start-end" (inclusive), like HTTP Range.
-            start, end = [int(x) for x in range_str.split("-")]
-            file.seek(start)
-            return file.read(end - start + 1)
-
-        resp = self._client._api.upload_file_init(
-            filename=filename,
-            filesize=file_size,
-            filesha1=sha1,
-            read_range_bytes_or_hash=(read_range if file_size >= 1024 * 1024 else None),
-            pid=dir_id,
-        )
-
-        return bool(resp.get("reuse"))
-
     def delete(self, path: str | FileSystemEntry, *, recursive: bool = False) -> None:
         entry = self._resolve_entry(path)
         if not recursive and entry.is_directory:
@@ -399,9 +298,113 @@ class WebAPIFileClient(FileClient):
         resp = self._client._api.fs_copy(src_ids, pid=dest_id)
         check_response(resp)
 
-    def download_info(
-        self, path: str | File, *, user_agent: str | None = None
-    ) -> DownloadInfo:
+    def _upload(
+        self,
+        path: str,
+        file: BinaryIO,
+        *,
+        instant_only: bool = False,
+        progress_callback: Callable[[Progress], object] | None = None,
+    ) -> File:
+        path = normalize_path(path)
+
+        # raise an error if the file already exists
+        try:
+            self.stat(path)
+        except NotFoundError:
+            pass
+        else:
+            raise AlreadyExistsError(f"File already exists: {path}", errno=0)
+
+        parent_path = os.path.dirname(path)
+        filename = os.path.basename(path)
+        dir_id = self._client._resolve_dir_id(parent_path)
+
+        sha1, file_size = sha1_file(file)
+
+        # Only attempt instant upload when the file meets the minimum size.
+        if file_size >= MIN_INSTANT_UPLOAD_SIZE:
+            try:
+                success = self._try_instant_upload(
+                    file=file,
+                    filename=filename,
+                    file_size=file_size,
+                    sha1=sha1,
+                    dir_id=dir_id,
+                    path=path,
+                )
+            except Exception as exc:
+                if instant_only:
+                    raise
+                warnings.warn(
+                    f"Instant upload failed ({exc}); falling back to " "normal upload",
+                    stacklevel=2,
+                )
+            else:
+                if success:
+                    return self.stat(path)
+                if instant_only:
+                    raise InstantUploadNotAvailableError(
+                        "Instant upload is not available for this file "
+                        "(file not found on server)",
+                        errno=0,
+                    )
+            file.seek(0)
+
+        if isinstance(file, RemoteFile):
+            file.set_stream(True)  # use streaming upload for RemoteFile
+
+        resp = self._client._api.upload_file_sample(
+            file,
+            pid=dir_id,
+            filename=filename,
+        )
+        resp = check_response(resp)
+        data = resp.get("data", {})
+
+        return File(
+            id=str(data.get("file_id", "")),
+            parent_id=str(dir_id),
+            name=data.get("file_name", ""),
+            path=path,
+            pickcode=data.get("pick_code", ""),
+            created_time=parse_ts(data.get("file_ptime")),
+            modified_time=None,
+            open_time=None,
+            sha1=data.get("sha1", ""),
+            size=int(data.get("file_size", 0)),
+        )
+
+    def _try_instant_upload(
+        self,
+        *,
+        file: BinaryIO,
+        filename: str,
+        file_size: int,
+        sha1: str,
+        dir_id: str,
+        path: str,
+    ) -> bool:
+        """Attempt instant upload.  Return `True` on success, `False` if the
+        server does not have this file and a regular upload is required."""
+
+        def read_range(range_str: str) -> bytes:
+            # sign_check format is "start-end" (inclusive), like HTTP Range.
+            start, end = [int(x) for x in range_str.split("-")]
+            file.seek(start)
+            return file.read(end - start + 1)
+
+        resp = self._client._api.upload_file_init(
+            filename=filename,
+            filesize=file_size,
+            filesha1=sha1,
+            read_range_bytes_or_hash=(read_range if file_size >= 1024 * 1024 else None),
+            pid=dir_id,
+        )
+
+        return bool(resp.get("reuse"))
+
+    def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)
         if entry.is_directory:
             raise ValueError("Cannot get download info for a directory")
@@ -412,7 +415,7 @@ class WebAPIFileClient(FileClient):
         cookie_str = "; ".join(
             f"{k}={m.value}" for k, m in self._client._api.cookies.items()
         )
-        return DownloadInfo(
+        return DownloadUrl(
             url=str(p115url),
             file_name=entry.name,
             file_size=entry.size,

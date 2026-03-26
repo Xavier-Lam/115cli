@@ -118,7 +118,7 @@ class BaseTestCase(unittest.TestCase):
         try:
             cls.test_root_dir = cls.client.file.create_directory(TEST_ROOT)
         except AlreadyExistsError:
-            cls.test_root_dir = cls.client.file.info(TEST_ROOT)
+            cls.test_root_dir = cls.client.file.stat(TEST_ROOT)
 
     @classmethod
     def tearDownClass(cls):

@@ -81,7 +81,7 @@ class CloudTask:
 
 
 @dataclass(frozen=True)
-class DownloadInfo:
+class DownloadUrl:
     """Download information for an existing file.
 
     Attributes:

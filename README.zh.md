@@ -23,6 +23,9 @@ pip install 115cli
 常见示例:
 
 ```bash
+# 使用 cookie 登录
+115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+
 # 账户信息
 115cli account
 
@@ -39,9 +42,9 @@ pip install 115cli
 115cli find /search/path keyword
 
 # 查看文件信息和获取下载地址
-115cli info /path/to/file
-115cli download-info /path/to/file
-115cli download-info --format aria2c /path/to/file
+115cli stat /path/to/file
+115cli url /path/to/file
+115cli url --format aria2c /path/to/file
 
 # 下载
 115cli fetch /path/to/file.mp4
@@ -95,11 +98,11 @@ info = client.file.info("/path/to/file.txt")
 print(info.name, info.size, info.sha1)
 
 # 获取下载信息
-dl = client.file.download_info("/path/to/file.txt")
+dl = client.file.url("/path/to/file.txt")
 print(dl.url)
 
 # 下载
-with client.file.fetch("/path/to/file.txt") as rf:
+with client.file.open("/path/to/file.txt") as rf:
     data = rf.read(1024)  # 仅下载前1024字节
 
 # 上传

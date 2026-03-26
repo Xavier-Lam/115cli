@@ -9,17 +9,18 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 from cli115.cli import build_parser, main
-from cli115.client.base import (
+from cli115.client.base import DEFAULT_PAGE_SIZE
+from cli115.client.models import (
     AccountInfo,
     CloudTask,
-    DEFAULT_PAGE_SIZE,
     Directory,
-    DownloadInfo,
+    DownloadUrl,
     DownloadQuota,
     File,
     Pagination,
+    SortField,
+    TaskStatus,
 )
-from cli115.client.models import SortField, TaskStatus
 from cli115.cmds.account import AccountCommand
 from cli115.cmds.config import load_config
 from cli115.cmds.config_cmd import ConfigCommand
@@ -31,16 +32,16 @@ from cli115.cmds.download import (
     DownloadListCommand,
     DownloadQuotaCommand,
 )
-from cli115.cmds.download_info import DownloadInfoCommand
 from cli115.cmds.fetch import FetchCommand
-from cli115.cmds.id import IdCommand
-from cli115.cmds.info import InfoCommand
 from cli115.cmds.find import FindCommand
+from cli115.cmds.id import IdCommand
 from cli115.cmds.ls import LsCommand
 from cli115.cmds.mkdir import MkdirCommand
 from cli115.cmds.mv import MvCommand
 from cli115.cmds.rm import RmCommand
+from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
+from cli115.cmds.url import UrlCommand
 from cli115.exceptions import NotFoundError
 
 
@@ -327,7 +328,7 @@ class TestUploadCommand(unittest.TestCase):
     @patch.object(UploadCommand, "_create_client")
     def test_upload(self, mock_create):
         mock_client = MagicMock()
-        mock_client.file.info.side_effect = NotFoundError("Not found")
+        mock_client.file.stat.side_effect = NotFoundError("Not found")
         mock_client.file.upload.return_value = _make_file(name="uploaded.txt")
         mock_create.return_value = mock_client
         parser = build_parser()
@@ -347,7 +348,7 @@ class TestUploadCommand(unittest.TestCase):
     def test_upload_to_directory(self, mock_create):
         mock_client = MagicMock()
         # remote path resolves to a directory
-        mock_client.file.info.return_value = _make_dir(name="remotedir", id="300")
+        mock_client.file.stat.return_value = _make_dir(name="remotedir", id="300")
         mock_client.file.upload.return_value = _make_file(name="uploaded.txt")
         mock_create.return_value = mock_client
         parser = build_parser()
@@ -361,17 +362,17 @@ class TestUploadCommand(unittest.TestCase):
         )
 
 
-class TestInfoCommand(unittest.TestCase):
-    @patch.object(InfoCommand, "_create_client")
-    def test_info_file(self, mock_create):
+class TestStatCommand(unittest.TestCase):
+    @patch.object(StatCommand, "_create_client")
+    def test_stat_file(self, mock_create):
         mock_client = MagicMock()
-        mock_client.file.info.return_value = _make_file()
+        mock_client.file.stat.return_value = _make_file()
         mock_create.return_value = mock_client
         parser = build_parser()
-        args = parser.parse_args(["info", "/test.txt"])
+        args = parser.parse_args(["stat", "/test.txt"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            InfoCommand().execute(args)
+            StatCommand().execute(args)
 
         output = mock_out.getvalue()
         self.assertIn("test.txt", output)
@@ -379,16 +380,16 @@ class TestInfoCommand(unittest.TestCase):
         self.assertIn("abc123", output)
         self.assertIn("1024", output)
 
-    @patch.object(InfoCommand, "_create_client")
-    def test_info_directory(self, mock_create):
+    @patch.object(StatCommand, "_create_client")
+    def test_stat_directory(self, mock_create):
         mock_client = MagicMock()
-        mock_client.file.info.return_value = _make_dir()
+        mock_client.file.stat.return_value = _make_dir()
         mock_create.return_value = mock_client
         parser = build_parser()
-        args = parser.parse_args(["info", "/testdir"])
+        args = parser.parse_args(["stat", "/testdir"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            InfoCommand().execute(args)
+            StatCommand().execute(args)
 
         output = mock_out.getvalue()
         self.assertIn("testdir", output)
@@ -642,17 +643,17 @@ class TestBuildParser(unittest.TestCase):
         expected = [
             "auth",
             "config",
-            "ls",
-            "find",
             "cp",
+            "download",
+            "find",
+            "id",
+            "ls",
+            "mkdir",
             "mv",
             "rm",
-            "mkdir",
+            "stat",
             "upload",
-            "info",
-            "id",
-            "download",
-            "download-info",
+            "url",
         ]
         for cmd in expected:
             self.assertIn(cmd, parser._subparsers._group_actions[0].choices)
@@ -770,8 +771,8 @@ class TestFindCommand(unittest.TestCase):
         self.assertIn("Warning", mock_err.getvalue())
 
 
-def _make_download_info():
-    return DownloadInfo(
+def _make_url():
+    return DownloadUrl(
         url="https://cdn.115.com/test.bin?t=123",
         file_name="test.bin",
         file_size=4096,
@@ -782,17 +783,17 @@ def _make_download_info():
     )
 
 
-class TestDownloadInfoCommand(unittest.TestCase):
-    @patch.object(DownloadInfoCommand, "_create_client")
+class TestUrlCommand(unittest.TestCase):
+    @patch.object(UrlCommand, "_create_client")
     def test_plain_format(self, mock_create):
         mock_client = MagicMock()
-        mock_client.file.download_info.return_value = _make_download_info()
+        mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
         parser = build_parser()
-        args = parser.parse_args(["download-info", "/test.bin"])
+        args = parser.parse_args(["url", "/test.bin"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            DownloadInfoCommand().execute(args)
+            UrlCommand().execute(args)
 
         output = mock_out.getvalue()
         self.assertIn("https://cdn.115.com/test.bin?t=123", output)
@@ -801,8 +802,8 @@ class TestDownloadInfoCommand(unittest.TestCase):
         self.assertIn("Mozilla/5.0", output)
         self.assertIn("UID=u1", output)
 
-    @patch("cli115.cmds.download_info.load_config")
-    @patch.object(DownloadInfoCommand, "_create_client")
+    @patch("cli115.cmds.url.load_config")
+    @patch.object(UrlCommand, "_create_client")
     def test_aria2c_format(self, mock_create, mock_load_config):
         cfg = configparser.ConfigParser()
         cfg["download"] = {
@@ -811,13 +812,13 @@ class TestDownloadInfoCommand(unittest.TestCase):
         }
         mock_load_config.return_value = cfg
         mock_client = MagicMock()
-        mock_client.file.download_info.return_value = _make_download_info()
+        mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
         parser = build_parser()
-        args = parser.parse_args(["download-info", "--format", "aria2c", "/test.bin"])
+        args = parser.parse_args(["url", "--format", "aria2c", "/test.bin"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            DownloadInfoCommand().execute(args)
+            UrlCommand().execute(args)
 
         output = mock_out.getvalue()
         self.assertIn("aria2c", output)
@@ -832,8 +833,8 @@ class TestDownloadInfoCommand(unittest.TestCase):
         self.assertIn("UID=u1", output)
         self.assertIn("https://cdn.115.com/test.bin?t=123", output)
 
-    @patch("cli115.cmds.download_info.load_config")
-    @patch.object(DownloadInfoCommand, "_create_client")
+    @patch("cli115.cmds.url.load_config")
+    @patch.object(UrlCommand, "_create_client")
     def test_aria2c_format_with_check_integrity(self, mock_create, mock_load_config):
         cfg = configparser.ConfigParser()
         cfg["download"] = {
@@ -842,18 +843,18 @@ class TestDownloadInfoCommand(unittest.TestCase):
         }
         mock_load_config.return_value = cfg
         mock_client = MagicMock()
-        mock_client.file.download_info.return_value = _make_download_info()
+        mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
         parser = build_parser()
         args = parser.parse_args(
-            ["download-info", "--format", "aria2c", "--check-integrity", "/test.bin"]
+            ["url", "--format", "aria2c", "--check-integrity", "/test.bin"]
         )
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            DownloadInfoCommand().execute(args)
+            UrlCommand().execute(args)
 
         output = mock_out.getvalue()
-        self.assertIn(f"--checksum=sha-1={_make_download_info().sha1}", output)
+        self.assertIn(f"--checksum=sha-1={_make_url().sha1}", output)
 
 
 class TestConfigCommand(unittest.TestCase):
@@ -955,7 +956,7 @@ class TestFetchCommand(unittest.TestCase):
         if file is None:
             file = _make_file(name="remote.bin", size=1024)
         mock_client = MagicMock()
-        mock_client.file.info.return_value = file
+        mock_client.file.stat.return_value = file
         return mock_client
 
     @patch.object(FetchCommand, "_create_client")

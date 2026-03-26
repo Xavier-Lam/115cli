@@ -32,7 +32,7 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         # local filename to form the final destination path.
         remote_path = args.remote_path
         try:
-            entry = client.file.info(remote_path)
+            entry = client.file.stat(remote_path)
             if entry.is_directory:
                 file_name = os.path.basename(args.local_path)
                 remote_path = remote_path.rstrip("/") + "/" + file_name

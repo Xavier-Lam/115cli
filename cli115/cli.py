@@ -1,43 +1,46 @@
 """CLI entry point for 115cli."""
 
 import argparse
+from collections import OrderedDict
 import sys
 
 from cli115.__version__ import __version__
-from cli115.cmds.base import BaseCommand
 from cli115.cmds.account import AccountCommand
 from cli115.cmds.auth import AuthCommand
 from cli115.cmds.config_cmd import ConfigCommand
 from cli115.cmds.cp import CpCommand
 from cli115.cmds.download import DownloadCommand
-from cli115.cmds.download_info import DownloadInfoCommand
 from cli115.cmds.fetch import FetchCommand
-from cli115.cmds.id import IdCommand
-from cli115.cmds.info import InfoCommand
 from cli115.cmds.find import FindCommand
+from cli115.cmds.id import IdCommand
 from cli115.cmds.ls import LsCommand
 from cli115.cmds.mkdir import MkdirCommand
 from cli115.cmds.mv import MvCommand
 from cli115.cmds.rm import RmCommand
+from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
+from cli115.cmds.url import UrlCommand
 
-COMMANDS: dict[str, BaseCommand] = {
-    "account": AccountCommand(),
-    "auth": AuthCommand(),
-    "config": ConfigCommand(),
-    "ls": LsCommand(),
-    "find": FindCommand(),
-    "cp": CpCommand(),
-    "mv": MvCommand(),
-    "rm": RmCommand(),
-    "mkdir": MkdirCommand(),
-    "upload": UploadCommand(),
-    "info": InfoCommand(),
-    "id": IdCommand(),
-    "fetch": FetchCommand(),
-    "download": DownloadCommand(),
-    "download-info": DownloadInfoCommand(),
-}
+
+COMMANDS = OrderedDict(
+    [
+        ("account", AccountCommand()),
+        ("auth", AuthCommand()),
+        ("config", ConfigCommand()),
+        ("ls", LsCommand()),
+        ("find", FindCommand()),
+        ("cp", CpCommand()),
+        ("mv", MvCommand()),
+        ("rm", RmCommand()),
+        ("mkdir", MkdirCommand()),
+        ("upload", UploadCommand()),
+        ("stat", StatCommand()),
+        ("id", IdCommand()),
+        ("fetch", FetchCommand()),
+        ("download", DownloadCommand()),
+        ("url", UrlCommand()),
+    ]
+)
 
 
 def build_parser() -> argparse.ArgumentParser:

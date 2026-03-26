@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cli115.client.webapi import DEFAULT_USER_AGENT
 
+
 DEFAULT_CONFIG_DIR = Path.home() / ".115cli"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.ini"
 DEFAULT_CREDENTIALS_DIR = DEFAULT_CONFIG_DIR / "credentials"

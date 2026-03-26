@@ -6,8 +6,8 @@ import argparse
 from abc import ABC, abstractmethod
 
 from cli115.auth.cookie import CookieAuth
-from cli115.cmds.config import load_current_credential
 from cli115.client import Client, create_client
+from cli115.cmds.config import load_current_credential
 
 
 class BaseCommand(ABC):

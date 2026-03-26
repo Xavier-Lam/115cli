@@ -61,7 +61,7 @@ class TestInfo(BaseTestCase):
 
     def test_info_returns_directory(self):
         path = f"{TEST_ROOT}/{self.info_name}"
-        result = self.client.file.info(path)
+        result = self.client.file.stat(path)
         self.assertIsInstance(result, Directory)
         self.assertTrue(result.is_directory)
         self.assertEqual(result.name, self.info_name)
@@ -71,7 +71,7 @@ class TestInfo(BaseTestCase):
 
     def test_info_returns_file(self):
         path = f"{TEST_ROOT}/{self.info_fname}"
-        result = self.client.file.info(path)
+        result = self.client.file.stat(path)
         self.assertIsInstance(result, File)
         self.assertFalse(result.is_directory)
         self.assertEqual(result.name, self.info_fname)
@@ -370,7 +370,7 @@ class TestRename(BaseTestCase):
         old_path = f"{TEST_ROOT}/{old_name}"
         self.client.file.create_directory(old_path)
         self.client.file.rename(old_path, new_name)
-        result = self.client.file.info(f"{TEST_ROOT}/{new_name}")
+        result = self.client.file.stat(f"{TEST_ROOT}/{new_name}")
         self.assertEqual(result.name, new_name)
         # cleanup
         try:
@@ -382,7 +382,7 @@ class TestRename(BaseTestCase):
         entry, _ = self.upload_file()
         new_name = f"renf_new_{uuid.uuid4().hex[:8]}.bin"
         self.client.file.rename(entry.path, new_name)
-        result = self.client.file.info(f"{TEST_ROOT}/{new_name}")
+        result = self.client.file.stat(f"{TEST_ROOT}/{new_name}")
         self.assertEqual(result.name, new_name)
         try:
             self.client.file.delete(f"{TEST_ROOT}/{new_name}")
@@ -468,7 +468,7 @@ class TestDownloadInfo(BaseTestCase):
         cls._uploaded_sha1 = sha1
 
     def test_download_info_returns_valid_object(self):
-        info = self.client.file.download_info(self._remote_path)
+        info = self.client.file.url(self._remote_path)
         self.assertTrue(info.url.startswith("http"))
         self.assertTrue(info.file_name)
         self.assertGreater(info.file_size, 0)

@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime
 from typing import BinaryIO
 
-from cli115.client.base import Directory, File
+from cli115.client.models import Directory, File
 from cli115.exceptions import (
     APIError,
     AlreadyExistsError,

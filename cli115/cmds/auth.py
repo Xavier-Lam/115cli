@@ -6,7 +6,7 @@ import argparse
 import sys
 from http.cookies import SimpleCookie
 
-from cli115.auth.cookie import CookieAuth
+from cli115.auth import CookieAuth
 from cli115.client import create_client
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.config import save_cookie_credential

@@ -7,7 +7,7 @@ import json
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from cli115.client.base import FileSystemEntry
+from cli115.client import FileSystemEntry
 
 
 class PairFormat(str, Enum):

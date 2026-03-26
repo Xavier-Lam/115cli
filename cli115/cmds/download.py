@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 
+from cli115.client.models import CloudTask
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_size, ListFormatterMixin, PairFormatterMixin
-from cli115.client.base import CloudTask
 
 
 _STATUS_LABELS = {

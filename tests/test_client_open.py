@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from cli115.client import File
-from cli115.client.base import DownloadInfo, FileClient, RemoteFile
+from cli115.client.base import DownloadUrl, FileClient, RemoteFile
 from tests.base import BaseTestCase
 
 
@@ -18,7 +18,7 @@ def _make_info(**kwargs):
         cookies="UID=test",
     )
     defaults.update(kwargs)
-    return DownloadInfo(**defaults)
+    return DownloadUrl(**defaults)
 
 
 class TestRemoteFile(unittest.TestCase):
@@ -143,23 +143,23 @@ class TestFileClientOpen(unittest.TestCase):
     def test_open_returns_remote_file_with_correct_info(self):
         info = _make_info()
         mock_self = MagicMock()
-        mock_self.download_info.return_value = info
+        mock_self.url.return_value = info
         rf = FileClient.open(mock_self, "/some/path")
         self.assertIsInstance(rf, RemoteFile)
         self.assertEqual(rf.name, info.file_name)
         self.assertEqual(rf.size, info.file_size)
-        mock_self.download_info.assert_called_once_with("/some/path")
+        mock_self.url.assert_called_once_with("/some/path")
 
     def test_open_with_file_object(self):
         info = _make_info(file_name="test.mkv", file_size=2048)
         mock_self = MagicMock()
-        mock_self.download_info.return_value = info
+        mock_self.url.return_value = info
         mock_file = MagicMock()
         rf = FileClient.open(mock_self, mock_file)
         self.assertIsInstance(rf, RemoteFile)
         self.assertEqual(rf.name, "test.mkv")
         self.assertEqual(rf.size, 2048)
-        mock_self.download_info.assert_called_once_with(mock_file)
+        mock_self.url.assert_called_once_with(mock_file)
 
 
 class TestOpen(BaseTestCase):

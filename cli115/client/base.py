@@ -13,7 +13,7 @@ from cli115.client.models import (
     AccountInfo,
     CloudTask,
     Directory,
-    DownloadInfo,
+    DownloadUrl,
     DownloadQuota,
     File,
     FileSystemEntry,
@@ -127,6 +127,31 @@ class FileClient(ABC):
     """Abstract interface for file operations."""
 
     @abstractmethod
+    def id(self, file_id: str) -> Directory | File:
+        """Get info for a file or directory by its ID.
+
+        Prefer this over other methods when the ID is already known,
+        as it requires fewer requests than resolving by path.
+
+        Args:
+            file_id: The unique identifier of the file or directory.
+
+        Returns:
+            A Directory or File object.
+        """
+
+    @abstractmethod
+    def stat(self, path: str) -> Directory | File:
+        """Get info for a file or directory at the given path.
+
+        Args:
+            path: Path to the file or directory.
+
+        Returns:
+            A Directory or File object.
+        """
+
+    @abstractmethod
     def list(
         self,
         path: str | Directory = "/",
@@ -171,31 +196,6 @@ class FileClient(ABC):
         """
 
     @abstractmethod
-    def id(self, file_id: str) -> Directory | File:
-        """Get info for a file or directory by its ID.
-
-        Prefer this over other methods when the ID is already known,
-        as it requires fewer requests than resolving by path.
-
-        Args:
-            file_id: The unique identifier of the file or directory.
-
-        Returns:
-            A Directory or File object.
-        """
-
-    @abstractmethod
-    def info(self, path: str) -> Directory | File:
-        """Get info for a file or directory at the given path.
-
-        Args:
-            path: Path to the file or directory.
-
-        Returns:
-            A Directory or File object.
-        """
-
-    @abstractmethod
     def create_directory(self, path: str, *, parents: bool = False) -> Directory:
         """Create a new directory.
 
@@ -209,77 +209,6 @@ class FileClient(ABC):
 
         Returns:
             The created Directory.
-        """
-
-    def upload(
-        self,
-        path: str,
-        file: str | PathLike[str] | BinaryIO,
-        *,
-        instant_only: bool = False,
-        progress_callback: Callable[[Progress], object] | None = None,
-    ) -> File:
-        """Upload a file.
-
-        Instant upload is always attempted first when the file is at
-        least :data:`MIN_INSTANT_UPLOAD_SIZE` bytes: if the server already has
-        a copy matched by SHA-1, the upload completes without transferring data.
-
-        Args:
-            path: Full destination path on the remote disk, including the
-                  target filename (e.g. ``"/backups/archive.tar.gz"``). The
-                  parent directory must already exist.
-            file: A local file path (str / PathLike) or a readable
-                  binary file-like object.
-            instant_only: If ``True``, only attempt instant upload for files
-                  at or above :data:`MIN_INSTANT_UPLOAD_SIZE`.  Files below
-                  that threshold are uploaded normally.  Raises
-                  :class:`~cli115.exceptions.InstantUploadNotAvailableError`
-                  when instant upload is unavailable for a large-enough file.
-            progress_callback: Optional callable invoked periodically
-                  with a :class:`Progress` instance.
-
-        Returns:
-            The uploaded File entry.
-        """
-        opened = None
-        if isinstance(file, (str, PathLike)):
-            opened = open(file, "rb")
-            file = opened
-        try:
-            return self._upload(
-                path,
-                file,
-                instant_only=instant_only,
-                progress_callback=progress_callback,
-            )
-        finally:
-            if opened is not None:
-                opened.close()
-
-    @abstractmethod
-    def _upload(
-        self,
-        path: str,
-        file: BinaryIO,
-        *,
-        instant_only: bool = False,
-        progress_callback: Callable[[Progress], object] | None = None,
-    ) -> File:
-        """Perform the actual file upload.
-
-        Subclasses implement this method. The caller guarantees that *file*
-        is a readable binary file-like object (i.e. path strings have already
-        been opened before this method is invoked).
-
-        Args:
-            path: Full destination path on the remote disk.
-            file: A readable binary file-like object.
-            instant_only: See :meth:`upload`.
-            progress_callback: See :meth:`upload`.
-
-        Returns:
-            The uploaded File entry.
         """
 
     @abstractmethod
@@ -357,10 +286,79 @@ class FileClient(ABC):
             dest_dir: Destination directory path or :class:`Directory` object.
         """
 
+    def upload(
+        self,
+        path: str,
+        file: str | PathLike[str] | BinaryIO,
+        *,
+        instant_only: bool = False,
+        progress_callback: Callable[[Progress], object] | None = None,
+    ) -> File:
+        """Upload a file.
+
+        Instant upload is always attempted first when the file is at
+        least :data:`MIN_INSTANT_UPLOAD_SIZE` bytes: if the server already has
+        a copy matched by SHA-1, the upload completes without transferring data.
+
+        Args:
+            path: Full destination path on the remote disk, including the
+                  target filename (e.g. ``"/backups/archive.tar.gz"``). The
+                  parent directory must already exist.
+            file: A local file path (str / PathLike) or a readable
+                  binary file-like object.
+            instant_only: If ``True``, only attempt instant upload for files
+                  at or above :data:`MIN_INSTANT_UPLOAD_SIZE`.  Files below
+                  that threshold are uploaded normally.  Raises
+                  :class:`~cli115.exceptions.InstantUploadNotAvailableError`
+                  when instant upload is unavailable for a large-enough file.
+            progress_callback: Optional callable invoked periodically
+                  with a :class:`Progress` instance.
+
+        Returns:
+            The uploaded File entry.
+        """
+        opened = None
+        if isinstance(file, (str, PathLike)):
+            opened = open(file, "rb")
+            file = opened
+        try:
+            return self._upload(
+                path,
+                file,
+                instant_only=instant_only,
+                progress_callback=progress_callback,
+            )
+        finally:
+            if opened is not None:
+                opened.close()
+
     @abstractmethod
-    def download_info(
-        self, path: str | File, *, user_agent: str | None = None
-    ) -> DownloadInfo:
+    def _upload(
+        self,
+        path: str,
+        file: BinaryIO,
+        *,
+        instant_only: bool = False,
+        progress_callback: Callable[[Progress], object] | None = None,
+    ) -> File:
+        """Perform the actual file upload.
+
+        Subclasses implement this method. The caller guarantees that *file*
+        is a readable binary file-like object (i.e. path strings have already
+        been opened before this method is invoked).
+
+        Args:
+            path: Full destination path on the remote disk.
+            file: A readable binary file-like object.
+            instant_only: See :meth:`upload`.
+            progress_callback: See :meth:`upload`.
+
+        Returns:
+            The uploaded File entry.
+        """
+
+    @abstractmethod
+    def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         """Get download information for an existing file.
 
         Args:
@@ -369,7 +367,7 @@ class FileClient(ABC):
                 If ``None``, uses :data:`DEFAULT_USER_AGENT`.
 
         Returns:
-            A DownloadInfo with URL, user-agent, cookies, and file metadata.
+            A DownloadUrl object with url, user-agent, cookies, and file metadata.
         """
 
     def open(self, path: str | File) -> RemoteFile:
@@ -385,7 +383,7 @@ class FileClient(ABC):
         Returns:
             A :class:`RemoteFile` wrapping the download URL.
         """
-        info = self.download_info(path)
+        info = self.url(path)
         return RemoteFile(info)
 
 
@@ -439,7 +437,7 @@ class RemoteFile:
     Range headers.
     """
 
-    def __init__(self, info: DownloadInfo) -> None:
+    def __init__(self, info: DownloadUrl) -> None:
         self._info = info
         self._pos = 0
         self._size = info.file_size
