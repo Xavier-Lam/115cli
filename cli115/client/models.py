@@ -7,6 +7,9 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 
+# region Enums
+
+
 class SortField(str, Enum):
     """Field to sort file listings by."""
 
@@ -32,6 +35,85 @@ class TaskStatus(int, Enum):
     WAITING = 0
     DOWNLOADING = 1
     COMPLETED = 2
+
+
+# endregion
+# region File System Models
+
+
+@dataclass
+class FileSystemEntry:
+    """Base class for file system entries (files and directories).
+
+    Attributes:
+        id: Unique identifier of the entry.
+        parent_id: Identifier of the parent directory.
+        name: Name of the entry.
+        path: Absolute path of the entry. Set by methods that resolve by path;
+            ``None`` when only the ID is known (e.g. returned by ``id()``).
+        pickcode: Pickcode used for downloading.
+        created_time: When the entry was created.
+        modified_time: When the entry was last modified.
+        open_time: When the entry was last opened.
+        labels: List of user-assigned label names.
+    """
+
+    id: str
+    parent_id: str
+    name: str
+    path: str | None
+    pickcode: str
+    created_time: datetime | None
+    modified_time: datetime | None
+    open_time: datetime | None
+    labels: list[str] = field(default_factory=list)
+
+    @property
+    def is_directory(self) -> bool:
+        """Whether this entry is a directory."""
+        raise NotImplementedError
+
+
+@dataclass
+class Directory(FileSystemEntry):
+    """A directory in the 115 netdisk.
+
+    Attributes:
+        file_count: Number of items inside this directory.
+    """
+
+    file_count: int = 0
+
+    @property
+    def is_directory(self) -> bool:
+        """Whether this entry is a directory."""
+        return True
+
+
+@dataclass
+class File(FileSystemEntry):
+    """A file in the 115 netdisk.
+
+    Attributes:
+        size: File size in bytes.
+        sha1: SHA-1 hash of the file content.
+        file_type: File type / icon identifier (e.g. ``"mp4"``, ``"doc"``).
+        starred: Whether the file is starred.
+    """
+
+    size: int = 0
+    sha1: str = ""
+    file_type: str = ""
+    starred: bool = False
+
+    @property
+    def is_directory(self) -> bool:
+        """Whether this entry is a directory."""
+        return False
+
+
+# endregion
+# region Data Models
 
 
 @dataclass(frozen=True)
@@ -116,77 +198,6 @@ class DownloadQuota:
     total: int
 
 
-@dataclass
-class FileSystemEntry:
-    """Base class for file system entries (files and directories).
-
-    Attributes:
-        id: Unique identifier of the entry.
-        parent_id: Identifier of the parent directory.
-        name: Name of the entry.
-        path: Absolute path of the entry. Set by methods that resolve by path;
-            ``None`` when only the ID is known (e.g. returned by ``id()``).
-        pickcode: Pickcode used for downloading.
-        created_time: When the entry was created.
-        modified_time: When the entry was last modified.
-        open_time: When the entry was last opened.
-        labels: List of user-assigned label names.
-    """
-
-    id: str
-    parent_id: str
-    name: str
-    path: str | None
-    pickcode: str
-    created_time: datetime | None
-    modified_time: datetime | None
-    open_time: datetime | None
-    labels: list[str] = field(default_factory=list)
-
-    @property
-    def is_directory(self) -> bool:
-        """Whether this entry is a directory."""
-        raise NotImplementedError
-
-
-@dataclass
-class Directory(FileSystemEntry):
-    """A directory in the 115 netdisk.
-
-    Attributes:
-        file_count: Number of items inside this directory.
-    """
-
-    file_count: int = 0
-
-    @property
-    def is_directory(self) -> bool:
-        """Whether this entry is a directory."""
-        return True
-
-
-@dataclass
-class File(FileSystemEntry):
-    """A file in the 115 netdisk.
-
-    Attributes:
-        size: File size in bytes.
-        sha1: SHA-1 hash of the file content.
-        file_type: File type / icon identifier (e.g. ``"mp4"``, ``"doc"``).
-        starred: Whether the file is starred.
-    """
-
-    size: int = 0
-    sha1: str = ""
-    file_type: str = ""
-    starred: bool = False
-
-    @property
-    def is_directory(self) -> bool:
-        """Whether this entry is a directory."""
-        return False
-
-
 @dataclass(frozen=True)
 class Pagination:
     """Pagination metadata returned from list operations."""
@@ -209,3 +220,6 @@ class Progress:
     total_bytes: int
     completed_bytes: int
     duration: timedelta
+
+
+# endregion

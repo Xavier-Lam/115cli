@@ -1,6 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import re
+from typing import BinaryIO
+
+
+def normalize_path(path: str) -> str:
+    path = path.replace("\\", "/").strip()
+    if not path or path == "/":
+        return "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    return path.rstrip("/")
+
 
 _SIZE_UNITS: dict[str, int] = {
     "B": 1,
@@ -40,3 +52,22 @@ def parse_size(s: str | int) -> int:
     if unit not in _SIZE_UNITS:
         raise ValueError(f"Unknown unit {unit!r} in file size: {s!r}")
     return int(float(number) * _SIZE_UNITS[unit])
+
+
+_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB
+
+
+def sha1_file(file: BinaryIO) -> tuple[str, int]:
+    file.seek(0)
+    try:
+        h = hashlib.sha1()
+        size = 0
+        while True:
+            chunk = file.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            h.update(chunk)
+            size += len(chunk)
+        return h.hexdigest().upper(), size
+    finally:
+        file.seek(0)

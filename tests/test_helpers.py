@@ -1,6 +1,27 @@
 import unittest
 
-from cli115.helpers import parse_size
+from cli115.helpers import normalize_path, parse_size
+
+
+class TestNormalizePath(unittest.TestCase):
+
+    def test_root(self):
+        self.assertEqual(normalize_path("/"), "/")
+
+    def test_empty_returns_root(self):
+        self.assertEqual(normalize_path(""), "/")
+
+    def test_strips_trailing_slash(self):
+        self.assertEqual(normalize_path("/foo/bar/"), "/foo/bar")
+
+    def test_adds_leading_slash(self):
+        self.assertEqual(normalize_path("foo/bar"), "/foo/bar")
+
+    def test_normalizes_backslashes(self):
+        self.assertEqual(normalize_path("foo\\bar"), "/foo/bar")
+
+    def test_strips_whitespace(self):
+        self.assertEqual(normalize_path("  /foo  "), "/foo")
 
 
 class TestParseSize(unittest.TestCase):

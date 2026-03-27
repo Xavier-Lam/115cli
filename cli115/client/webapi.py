@@ -5,12 +5,9 @@ from __future__ import annotations
 import os
 import warnings
 from datetime import datetime
-from property import locked_cacheproperty
 from typing import BinaryIO, Callable
 
-from httpcore_request import HTTPStatusError
-from p115client import P115Client
-
+from cli115.api.web.p115client import check_response, P115Client
 from cli115.auth import Auth
 from cli115.client.base import (
     AccountClient,
@@ -37,20 +34,14 @@ from cli115.client.models import (
     SortOrder,
     TaskStatus,
 )
-from cli115.client.utils import (
-    check_response,
-    normalize_path,
-    parse_item,
-    parse_ts,
-    sha1_file,
-)
+from cli115.client.utils import parse_item, parse_ts
 from cli115.exceptions import (
     AlreadyExistsError,
     DirectoryNotEmptyError,
     InstantUploadNotAvailableError,
     NotFoundError,
-    WAFBlockedError,
 )
+from cli115.helpers import normalize_path, sha1_file
 
 
 DEFAULT_USER_AGENT = (
@@ -68,7 +59,7 @@ class WebAPIClient(Client):
 
     def __init__(self, auth: Auth):
         self._auth = auth
-        self._api = _115Client(auth.get_cookies())
+        self._api = P115Client(auth.get_cookies())
         self._account = WebAPIAccountClient(self)
         self._file = WebAPIFileClient(self)
         self._download = WebAPIDownloadClient(self)
@@ -567,55 +558,3 @@ class WebAPIDownloadClient(DownloadClient):
         """Fetch the first page of tasks and return a dict keyed by info_hash."""
         tasks, _ = self.list(page=1)
         return {t.info_hash: t for t in tasks}
-
-
-class _115Client(P115Client):
-    """
-    A wrapper around P115Client to add WAF block detection and userkey correction.
-    """
-
-    def request(
-        self,
-        /,
-        url,
-        method="GET",
-        payload=None,
-        *,
-        ecdh_encrypt=False,
-        request=None,
-        async_=False,
-        **request_kwargs,
-    ):
-        try:
-            return super().request(
-                url,
-                method,
-                payload,
-                ecdh_encrypt=ecdh_encrypt,
-                request=request,
-                async_=async_,
-                **request_kwargs,
-            )
-        except HTTPStatusError as exc:
-            if self._is_waf_blocked(exc):
-                raise WAFBlockedError(
-                    "Request blocked by Aliyun WAF; try again later"
-                ) from exc
-            raise
-
-    @locked_cacheproperty
-    def user_key(self) -> str:
-        # fetch userkey via /app/uploadinfo (works with web cookies) to avoid
-        # the default /android/2.0/user/upload_key endpoint which requires
-        # app-specific cookies (errno 99).
-        resp = self.upload_info()
-        check_response(resp)
-        return resp["userkey"]
-
-    @staticmethod
-    def _is_waf_blocked(exc: HTTPStatusError) -> bool:
-        """Return True if the error is an Aliyun WAF block (HTTP 405 with WAF body)."""
-        if exc.code != 405 or exc.headers["Content-Type"] != "text/html":
-            return False
-        body_text = exc.response_body.decode("utf-8", errors="replace")
-        return "aliyun.com" in body_text or "alicdn.com" in body_text

@@ -9,9 +9,8 @@ import time
 
 from tqdm import tqdm
 
-from cli115.client.utils import sha1_file
 from cli115.cmds.base import BaseCommand
-from cli115.helpers import parse_size
+from cli115.helpers import parse_size, sha1_file
 
 
 class FetchCommand(BaseCommand):
