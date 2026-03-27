@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from cli115.cli import build_parser, main
 from cli115.client.base import DEFAULT_PAGE_SIZE
+from cli115.client.lazy import LazyCollection
 from cli115.client.models import (
     AccountInfo,
     CloudTask,
@@ -45,6 +46,26 @@ from cli115.cmds.url import UrlCommand
 from cli115.exceptions import NotFoundError
 
 
+def _make_lazy(items, total=None):
+    if total is None:
+        total = len(items)
+    pagination = Pagination(total=total, offset=0, limit=len(items) if items else 115)
+
+    def fetch(page, page_size):
+        offset = (page - 1) * page_size
+        sliced = items[offset : offset + page_size]
+        pg = Pagination(total=total, offset=offset, limit=page_size)
+        return sliced, pg
+
+    col = LazyCollection(fetch, page_size=len(items) if items else 115)
+    # pre-warm first page so tests don't need network
+    if items:
+        col._ensure_page(1)
+    else:
+        col._pagination = pagination
+    return col
+
+
 def _make_dir(name="testdir", id="100", parent_id="0", file_count=5):
     return Directory(
         id=id,
@@ -77,13 +98,11 @@ def _make_file(name="test.txt", id="200", parent_id="100", size=1024):
 
 
 class TestLsCommand(unittest.TestCase):
-    def _make_client_mock(self, entries=None, pagination=None):
+    def _make_client_mock(self, entries=None, total=None):
         if entries is None:
             entries = [_make_dir(), _make_file()]
-        if pagination is None:
-            pagination = Pagination(total=2, offset=0, limit=115)
         mock_client = MagicMock()
-        mock_client.file.list.return_value = (entries, pagination)
+        mock_client.file.list.return_value = _make_lazy(entries, total=total)
         return mock_client
 
     @patch.object(LsCommand, "_create_client")
@@ -123,14 +142,14 @@ class TestLsCommand(unittest.TestCase):
     def test_ls_pagination_args(self, mock_create):
         mock_create.return_value = self._make_client_mock()
         parser = build_parser()
-        args = parser.parse_args(["ls", "--offset", "20", "--limit", "10", "/"])
+        args = parser.parse_args(["ls", "--offset", "0", "--limit", "10", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
             LsCommand().execute(args)
 
-        call_kwargs = mock_create.return_value.file.list.call_args.kwargs
-        self.assertEqual(call_kwargs["limit"], 10)
-        self.assertEqual(call_kwargs["offset"], 20)
+        mock_create.return_value.file.list.assert_called_once()
+        call_args = mock_create.return_value.file.list.call_args
+        self.assertEqual(call_args.args[0], "/")
 
     @patch.object(LsCommand, "_create_client")
     def test_ls_sort_options(self, mock_create):
@@ -170,8 +189,8 @@ class TestLsCommand(unittest.TestCase):
 
     @patch.object(LsCommand, "_create_client")
     def test_ls_warning_when_total_exceeds_default(self, mock_create):
-        pagination = Pagination(total=200, offset=0, limit=115)
-        mock_create.return_value = self._make_client_mock(pagination=pagination)
+        entries = [_make_dir(), _make_file()]
+        mock_create.return_value = self._make_client_mock(entries=entries, total=200)
         parser = build_parser()
         args = parser.parse_args(["ls", "/"])
 
@@ -184,8 +203,8 @@ class TestLsCommand(unittest.TestCase):
 
     @patch.object(LsCommand, "_create_client")
     def test_ls_no_warning_when_pagination_explicit(self, mock_create):
-        pagination = Pagination(total=200, offset=0, limit=10)
-        mock_create.return_value = self._make_client_mock(pagination=pagination)
+        entries = [_make_dir(), _make_file()]
+        mock_create.return_value = self._make_client_mock(entries=entries, total=200)
         parser = build_parser()
         args = parser.parse_args(["ls", "--limit", "10", "/"])
 
@@ -401,10 +420,7 @@ class TestMainEntryPoint(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_main_dispatches_to_command(self, mock_create):
         mock_client = MagicMock()
-        mock_client.file.list.return_value = (
-            [],
-            Pagination(total=0, offset=0, limit=115),
-        )
+        mock_client.file.list.return_value = _make_lazy([])
         mock_create.return_value = mock_client
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -488,10 +504,7 @@ class TestDownloadCommand(unittest.TestCase):
     @patch.object(DownloadListCommand, "_create_client")
     def test_download_list(self, mock_create):
         mock_client = MagicMock()
-        mock_client.download.list.return_value = (
-            [_make_task()],
-            Pagination(total=1, offset=0, limit=30),
-        )
+        mock_client.download.list.return_value = _make_lazy([_make_task()])
         mock_create.return_value = mock_client
         parser = build_parser()
         args = parser.parse_args(["download", "list"])
@@ -506,10 +519,7 @@ class TestDownloadCommand(unittest.TestCase):
     @patch.object(DownloadListCommand, "_create_client")
     def test_download_list_json(self, mock_create):
         mock_client = MagicMock()
-        mock_client.download.list.return_value = (
-            [_make_task()],
-            Pagination(total=1, offset=0, limit=30),
-        )
+        mock_client.download.list.return_value = _make_lazy([_make_task()])
         mock_create.return_value = mock_client
         parser = build_parser()
         args = parser.parse_args(["download", "list", "--format", "json"])
@@ -525,10 +535,7 @@ class TestDownloadCommand(unittest.TestCase):
     @patch.object(DownloadListCommand, "_create_client")
     def test_download_list_table(self, mock_create):
         mock_client = MagicMock()
-        mock_client.download.list.return_value = (
-            [_make_task()],
-            Pagination(total=1, offset=0, limit=30),
-        )
+        mock_client.download.list.return_value = _make_lazy([_make_task()])
         mock_create.return_value = mock_client
         parser = build_parser()
         args = parser.parse_args(["download", "list", "--format", "table"])
@@ -542,20 +549,19 @@ class TestDownloadCommand(unittest.TestCase):
         self.assertIn("abc123hash", output)
 
     @patch.object(DownloadListCommand, "_create_client")
-    def test_download_list_page(self, mock_create):
+    def test_download_list_offset(self, mock_create):
         mock_client = MagicMock()
-        mock_client.download.list.return_value = (
-            [],
-            Pagination(total=0, offset=0, limit=30),
-        )
+        mock_client.download.list.return_value = _make_lazy([], total=0)
         mock_create.return_value = mock_client
         parser = build_parser()
-        args = parser.parse_args(["download", "list", "--page", "2"])
+        args = parser.parse_args(
+            ["download", "list", "--offset", "30", "--limit", "30"]
+        )
 
         with patch("sys.stdout", new_callable=io.StringIO):
             DownloadCommand().execute(args)
 
-        mock_client.download.list.assert_called_once_with(2)
+        mock_client.download.list.assert_called_once()
 
     @patch.object(DownloadAddCommand, "_create_client")
     def test_download_add_single(self, mock_create):
@@ -660,13 +666,11 @@ class TestBuildParser(unittest.TestCase):
 
 
 class TestFindCommand(unittest.TestCase):
-    def _make_client_mock(self, entries=None, pagination=None):
+    def _make_client_mock(self, entries=None, total=None):
         if entries is None:
             entries = [_make_dir(), _make_file()]
-        if pagination is None:
-            pagination = Pagination(total=2, offset=0, limit=115)
         mock_client = MagicMock()
-        mock_client.file.find.return_value = (entries, pagination)
+        mock_client.file.find.return_value = _make_lazy(entries, total=total)
         return mock_client
 
     @patch.object(FindCommand, "_create_client")
@@ -684,7 +688,6 @@ class TestFindCommand(unittest.TestCase):
 
     @patch.object(FindCommand, "_create_client")
     def test_find_global_search(self, mock_create):
-        """path=None triggers a global search (no cid in API call)."""
         mock_create.return_value = self._make_client_mock()
         parser = build_parser()
         args = parser.parse_args(["find", "keyword"])
@@ -698,7 +701,6 @@ class TestFindCommand(unittest.TestCase):
 
     @patch.object(FindCommand, "_create_client")
     def test_find_with_path(self, mock_create):
-        """Providing a path positional arg passes it as the search scope."""
         mock_create.return_value = self._make_client_mock()
         parser = build_parser()
         args = parser.parse_args(["find", "/docs", "keyword"])
@@ -712,22 +714,25 @@ class TestFindCommand(unittest.TestCase):
 
     @patch.object(FindCommand, "_create_client")
     def test_find_pagination_args(self, mock_create):
-        mock_create.return_value = self._make_client_mock()
+        entries = [_make_file(name=f"f{i}.txt", id=str(i)) for i in range(20)]
+        mock_create.return_value = self._make_client_mock(entries=entries)
         parser = build_parser()
-        args = parser.parse_args(["find", "--offset", "10", "--limit", "5", "test"])
+        args = parser.parse_args(["find", "--offset", "5", "--limit", "5", "test"])
 
-        with patch("sys.stdout", new_callable=io.StringIO):
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
             FindCommand().execute(args)
 
-        call_kwargs = mock_create.return_value.file.find.call_args.kwargs
-        self.assertEqual(call_kwargs["offset"], 10)
-        self.assertEqual(call_kwargs["limit"], 5)
+        # Should show items 5..9
+        output = mock_out.getvalue()
+        self.assertIn("f5.txt", output)
+        self.assertIn("f9.txt", output)
+        self.assertNotIn("f4.txt", output)
+        self.assertNotIn("f10.txt", output)
 
     @patch.object(FindCommand, "_create_client")
     def test_find_plain_format(self, mock_create):
         mock_create.return_value = self._make_client_mock(
             entries=[_make_file(name="note.txt", id="888")],
-            pagination=Pagination(total=1, offset=0, limit=115),
         )
         parser = build_parser()
         args = parser.parse_args(["find", "--format", "plain", "note"])
@@ -741,9 +746,7 @@ class TestFindCommand(unittest.TestCase):
 
     @patch.object(FindCommand, "_create_client")
     def test_find_empty_results(self, mock_create):
-        mock_create.return_value = self._make_client_mock(
-            entries=[], pagination=Pagination(total=0, offset=0, limit=115)
-        )
+        mock_create.return_value = self._make_client_mock(entries=[])
         parser = build_parser()
         args = parser.parse_args(["find", "--format", "plain", "nonexistent"])
 
@@ -755,11 +758,9 @@ class TestFindCommand(unittest.TestCase):
 
     @patch.object(FindCommand, "_create_client")
     def test_find_pagination_warning(self, mock_create):
-        """A warning is printed when total exceeds DEFAULT_PAGE_SIZE."""
         entries = [_make_file(name=f"f{i}.txt", id=str(i)) for i in range(10)]
         mock_create.return_value = self._make_client_mock(
-            entries=entries,
-            pagination=Pagination(total=DEFAULT_PAGE_SIZE + 1, offset=0, limit=115),
+            entries=entries, total=DEFAULT_PAGE_SIZE + 1
         )
         parser = build_parser()
         args = parser.parse_args(["find", "f"])

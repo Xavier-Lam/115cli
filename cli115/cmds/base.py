@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-import argparse
 from abc import ABC, abstractmethod
+import argparse
+import sys
+from typing import Sequence, TypeVar
 
 from cli115.auth.cookie import CookieAuth
 from cli115.client import Client, create_client
 from cli115.cmds.config import load_current_credential
+
+
+T = TypeVar("T")
 
 
 class BaseCommand(ABC):
@@ -33,3 +38,59 @@ class BaseCommand(ABC):
         else:
             raise ValueError(f"Unsupported credential type: {cred['type']}")
         return create_client(auth)
+
+
+class PaginationCommand(BaseCommand, ABC):
+    """Base class for commands that support --limit / --offset pagination.
+
+    Subclasses call :meth:`apply_pagination` with a :class:`Sequence`
+    to get the slice of items to display.  When no ``--offset`` is given and
+    the collection has more items than ``--limit``, a warning is printed to
+    *stderr*.
+    """
+
+    _default_page_size: int = 30
+
+    def register(self, parser: argparse.ArgumentParser) -> None:
+        super().register(parser)
+        parser.add_argument(
+            "--limit",
+            type=int,
+            default=None,
+            help=f"Maximum number of items to show (default: {self._default_page_size})",
+        )
+        parser.add_argument(
+            "--offset",
+            type=int,
+            default=None,
+            help="Number of items to skip (pagination offset)",
+        )
+
+    def apply_pagination(
+        self,
+        collection: Sequence[T],
+        args: argparse.Namespace,
+    ) -> list[T]:
+        """Return a sliced list from *collection* according to --limit/--offset.
+
+        If ``--offset`` is not provided and the collection has more items than
+        ``--limit``, a warning is printed to *stderr*. Pass ``user_limit`` as
+        the value of ``args.limit`` *before* any command-level default is
+        applied, so the warning is suppressed when the user explicitly provided
+        ``--limit``.
+        """
+        offset = args.offset if args.offset is not None else 0
+        limit = args.limit or self._default_page_size
+
+        items = list(collection[offset : offset + limit])
+        total = len(collection)
+
+        if not args.offset and not args.limit and total > limit:
+            print(
+                (
+                    "Warning: {total} items total, only showing up to {limit}. "
+                    "Use --offset and --limit to paginate."
+                ).format(total=total, limit=limit),
+                file=sys.stderr,
+            )
+        return items

@@ -154,6 +154,7 @@ class FormatterMixin(ABC):
         return formatter_cls()
 
     def register(self, parser: argparse.ArgumentParser) -> None:
+        super().register(parser)
         self.add_format_argument(parser)
 
     def add_format_argument(self, parser: argparse.ArgumentParser) -> None:

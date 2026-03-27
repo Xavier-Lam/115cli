@@ -89,7 +89,7 @@ auth = CookieAuth(
 client = create_client(auth)
 
 # List directory
-entries, pagination = client.file.list("/")
+entries = client.file.list("/")
 for entry in entries:
     print(entry.name, entry.id)
 
@@ -110,7 +110,7 @@ result = client.file.upload("/remote/dir/", "/local/file.txt")
 
 # Cloud download
 client.download.add_url("https://example.com/file.mp4")
-tasks, _ = client.download.list()
+tasks = client.download.list()
 ```
 
 > This project is in an early stage of development, it may subject to breaking changes in the future.

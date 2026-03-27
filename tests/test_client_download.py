@@ -35,16 +35,15 @@ class TestDownloadAddAndDelete(BaseTestCase):
             self.client.download.delete(*self._hashes_to_delete)
 
     def test_add_url(self):
-        _, pagination = self.client.download.list()
-        current_total = pagination.total
+        current_total = len(self.client.download.list())
         task = self.client.download.add_url(_random_image_url())
         self._hashes_to_delete.append(task.info_hash)
         self.assertIsInstance(task, CloudTask)
         self.assertTrue(task.info_hash)
         self.assertIn(task.status, list(TaskStatus))
-        items, pagination = self.client.download.list()
-        self.assertEqual(pagination.total, current_total + 1)
-        self.assertTrue(any(t.info_hash == task.info_hash for t in items))
+        collection = self.client.download.list()
+        self.assertEqual(len(collection), current_total + 1)
+        self.assertTrue(any(t.info_hash == task.info_hash for t in collection))
 
     def test_add_url_with_dest_dir(self):
         task = self.client.download.add_url(
@@ -60,8 +59,7 @@ class TestDownloadAddAndDelete(BaseTestCase):
             self.assertEqual(task.folder_id, self.test_root_dir.id)
 
     def test_add_urls(self):
-        _, pagination = self.client.download.list()
-        current_total = pagination.total
+        current_total = len(self.client.download.list())
         urls = [_random_image_url(), _random_image_url()]
         tasks = self.client.download.add_urls(*urls)
         for t in tasks:
@@ -70,10 +68,10 @@ class TestDownloadAddAndDelete(BaseTestCase):
         for task in tasks:
             self.assertIsInstance(task, CloudTask)
             self.assertTrue(task.info_hash)
-        items, pagination = self.client.download.list()
-        self.assertEqual(pagination.total, current_total + 2)
+        collection = self.client.download.list()
+        self.assertEqual(len(collection), current_total + 2)
         for task in tasks:
-            self.assertTrue(any(t.info_hash == task.info_hash for t in items))
+            self.assertTrue(any(t.info_hash == task.info_hash for t in collection))
 
 
 if __name__ == "__main__":

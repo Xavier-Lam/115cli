@@ -89,7 +89,7 @@ auth = CookieAuth(
 client = create_client(auth)
 
 # 列目录
-entries, pagination = client.file.list("/")
+entries = client.file.list("/")
 for entry in entries:
 	print(entry.name, entry.id)
 
@@ -110,7 +110,7 @@ result = client.file.upload("/remote/dir/", "/local/file.txt")
 
 # 添加云端下载任务
 client.download.add_url("https://example.com/file.mp4")
-tasks, _ = client.download.list()
+tasks = client.download.list()
 ```
 
 ## 未来计划

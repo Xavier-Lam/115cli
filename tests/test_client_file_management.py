@@ -107,7 +107,7 @@ class TestList(BaseTestCase):
         cls.mixed_fname = mixed_entry.name
 
     def test_list_returns_created_folders(self):
-        items, pagination = self.client.file.list(TEST_ROOT)
+        items = self.client.file.list(TEST_ROOT)
         names = {item.name for item in items}
         self.assertIn(self.name_a, names)
         self.assertIn(self.name_b, names)
@@ -116,12 +116,11 @@ class TestList(BaseTestCase):
         self.assertIn(f"{TEST_ROOT}/{self.name_b}", paths)
 
         # empty folder
-        items, pagination = self.client.file.list(f"{TEST_ROOT}/{self.name_a}")
-        self.assertEqual(len(items), 0)
-        self.assertEqual(pagination.total, 0)
+        collection = self.client.file.list(f"{TEST_ROOT}/{self.name_a}")
+        self.assertEqual(len(collection), 0)
 
         # mixed folder
-        items, _ = self.client.file.list(f"{TEST_ROOT}/{self.mixed_dir}")
+        items = self.client.file.list(f"{TEST_ROOT}/{self.mixed_dir}")
         dirs = [i for i in items if isinstance(i, Directory)]
         files = [i for i in items if isinstance(i, File)]
         paths = {i.path for i in items}
@@ -136,19 +135,8 @@ class TestList(BaseTestCase):
         with self.assertRaises(NotFoundError):
             self.client.file.list(f"{TEST_ROOT}/nonexistent")
 
-    def test_list_pagination(self):
-        items, pagination = self.client.file.list(TEST_ROOT, limit=1, offset=0)
-        self.assertEqual(len(items), 1)
-        self.assertGreaterEqual(pagination.total, 2)
-        fid1 = items[0].id
-        items, pagination = self.client.file.list(TEST_ROOT, limit=1, offset=1)
-        self.assertEqual(len(items), 1)
-        self.assertGreaterEqual(pagination.total, 2)
-        fid2 = items[0].id
-        self.assertNotEqual(fid1, fid2)
-
     def test_list_sort_order(self):
-        items, _ = self.client.file.list(
+        items = self.client.file.list(
             f"{TEST_ROOT}/{self.sort_dir}",
             sort=SortField.FILENAME,
             sort_order=SortOrder.DESC,
@@ -156,7 +144,7 @@ class TestList(BaseTestCase):
         names = [item.name for item in items]
         self.assertLess(names.index("zzz"), names.index("aaa"))
 
-        items, _ = self.client.file.list(
+        items = self.client.file.list(
             f"{TEST_ROOT}/{self.sort_dir}",
             sort=SortField.FILENAME,
             sort_order=SortOrder.ASC,
@@ -164,7 +152,7 @@ class TestList(BaseTestCase):
         names = [item.name for item in items]
         self.assertLess(names.index("aaa"), names.index("zzz"))
 
-        items, _ = self.client.file.list(
+        items = self.client.file.list(
             f"{TEST_ROOT}/{self.sort_dir}",
             sort=SortField.CREATED_TIME,
             sort_order=SortOrder.DESC,
@@ -172,7 +160,7 @@ class TestList(BaseTestCase):
         names = [item.name for item in items]
         self.assertLess(names.index("aaa"), names.index("zzz"))
 
-        items, _ = self.client.file.list(
+        items = self.client.file.list(
             f"{TEST_ROOT}/{self.sort_dir}",
             sort=SortField.CREATED_TIME,
             sort_order=SortOrder.ASC,
@@ -192,7 +180,7 @@ class TestCreateDirectory(BaseTestCase):
         self.assertEqual(folder.path, path)
 
         # verify it appears in the list
-        items, _ = self.client.file.list(TEST_ROOT)
+        items = self.client.file.list(TEST_ROOT)
         names = {item.name for item in items}
         self.assertIn(name, names)
 
@@ -211,7 +199,7 @@ class TestCreateDirectory(BaseTestCase):
         self.assertEqual(folder.name, child_name)
         self.assertEqual(folder.path, path)
         # parent was created implicitly
-        items, _ = self.client.file.list(f"{TEST_ROOT}/{parent_name}")
+        items = self.client.file.list(f"{TEST_ROOT}/{parent_name}")
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].name, child_name)
 
@@ -222,14 +210,14 @@ class TestDelete(BaseTestCase):
         name = _unique("deld")
         self.client.file.create_directory(f"{TEST_ROOT}/{name}")
         self.client.file.delete(f"{TEST_ROOT}/{name}")
-        items, _ = self.client.file.list(TEST_ROOT)
+        items = self.client.file.list(TEST_ROOT)
         names = {item.name for item in items}
         self.assertNotIn(name, names)
 
     def test_delete_file(self):
         entry, _ = self.upload_file()
         self.client.file.delete(entry.path)
-        items, _ = self.client.file.list(TEST_ROOT)
+        items = self.client.file.list(TEST_ROOT)
         names = {item.name for item in items}
         self.assertNotIn(entry.name, names)
 
@@ -242,7 +230,7 @@ class TestDelete(BaseTestCase):
             f"{TEST_ROOT}/{name1}",
             f"{TEST_ROOT}/{name2}",
         )
-        items, _ = self.client.file.list(TEST_ROOT)
+        items = self.client.file.list(TEST_ROOT)
         names = {item.name for item in items}
         self.assertNotIn(name1, names)
         self.assertNotIn(name2, names)
@@ -260,7 +248,7 @@ class TestDelete(BaseTestCase):
         self.client.file.create_directory(dir_path)
         self.client.file.create_directory(f"{dir_path}/inner")
         self.client.file.delete(dir_path, recursive=True)
-        items, _ = self.client.file.list(TEST_ROOT)
+        items = self.client.file.list(TEST_ROOT)
         self.assertNotIn(name, {i.name for i in items})
 
 
@@ -285,16 +273,16 @@ class TestMove(BaseTestCase):
         child = "move_child_dir"
         self.client.file.create_directory(f"{self.src_path}/{child}")
         self.client.file.move(f"{self.src_path}/{child}", self.dest_path)
-        dest_names = {i.name for i in self.client.file.list(self.dest_path)[0]}
-        src_names = {i.name for i in self.client.file.list(self.src_path)[0]}
+        dest_names = {i.name for i in self.client.file.list(self.dest_path)}
+        src_names = {i.name for i in self.client.file.list(self.src_path)}
         self.assertIn(child, dest_names)
         self.assertNotIn(child, src_names)
 
     def test_move_file(self):
         entry, _ = self.upload_file(self.src_path)
         self.client.file.move(entry.path, self.dest_path)
-        dest_names = {i.name for i in self.client.file.list(self.dest_path)[0]}
-        src_names = {i.name for i in self.client.file.list(self.src_path)[0]}
+        dest_names = {i.name for i in self.client.file.list(self.dest_path)}
+        src_names = {i.name for i in self.client.file.list(self.src_path)}
         self.assertIn(entry.name, dest_names)
         self.assertNotIn(entry.name, src_names)
 
@@ -306,8 +294,8 @@ class TestMove(BaseTestCase):
             f"{self.src_path}/batch_move_2",
             dest_dir=self.dest_path,
         )
-        dest_names = {i.name for i in self.client.file.list(self.dest_path)[0]}
-        src_items, _ = self.client.file.list(self.src_path)
+        dest_names = {i.name for i in self.client.file.list(self.dest_path)}
+        src_items = self.client.file.list(self.src_path)
         self.assertIn("batch_move_1", dest_names)
         self.assertIn("batch_move_2", dest_names)
         self.assertEqual(len(src_items), 0)
@@ -334,16 +322,16 @@ class TestCopy(BaseTestCase):
         child = "copy_child_dir"
         self.client.file.create_directory(f"{self.src_path}/{child}")
         self.client.file.copy(f"{self.src_path}/{child}", self.dest_path)
-        dest_names = {i.name for i in self.client.file.list(self.dest_path)[0]}
-        src_names = {i.name for i in self.client.file.list(self.src_path)[0]}
+        dest_names = {i.name for i in self.client.file.list(self.dest_path)}
+        src_names = {i.name for i in self.client.file.list(self.src_path)}
         self.assertIn(child, dest_names)
         self.assertIn(child, src_names)
 
     def test_copy_file(self):
         entry, _ = self.upload_file(self.src_path)
         self.client.file.copy(entry.path, self.dest_path)
-        dest_names = {i.name for i in self.client.file.list(self.dest_path)[0]}
-        src_names = {i.name for i in self.client.file.list(self.src_path)[0]}
+        dest_names = {i.name for i in self.client.file.list(self.dest_path)}
+        src_names = {i.name for i in self.client.file.list(self.src_path)}
         self.assertIn(entry.name, dest_names)
         self.assertIn(entry.name, src_names)
 
@@ -355,10 +343,10 @@ class TestCopy(BaseTestCase):
             f"{self.src_path}/batch_copy_2",
             dest_dir=self.dest_path,
         )
-        dest_names = {i.name for i in self.client.file.list(self.dest_path)[0]}
+        dest_names = {i.name for i in self.client.file.list(self.dest_path)}
         self.assertIn("batch_copy_1", dest_names)
         self.assertIn("batch_copy_2", dest_names)
-        src_items, _ = self.client.file.list(self.src_path)
+        src_items = self.client.file.list(self.src_path)
         self.assertEqual(len(src_items), 2)
 
 
@@ -418,41 +406,40 @@ class TestFind(BaseTestCase):
         time.sleep(1)
 
     def test_find(self):
-        entries, pagination = self.client.file.find("sub.bin", path=self.sub_dir.path)
+        entries = self.client.file.find("sub.bin", path=self.sub_dir.path)
         self.assertEqual(entries[0].id, self.sub_file.id)
         self.assertEqual(entries[0].name, self.sub_file.name)
         self.assertFalse(entries[0].is_directory)
         self.assertEqual(entries[0].parent_id, self.sub_dir.id)
-        self.assertEqual(pagination.total, 1)
+        self.assertEqual(len(entries), 1)
 
         # search in subdirectory
-        entries, pagination = self.client.file.find("sub", path=self.root_dir)
+        entries = self.client.file.find("sub", path=self.root_dir)
         self.assertEqual(entries[0].id, self.sub_file.id)
         self.assertEqual(entries[0].name, self.sub_file.name)
         self.assertFalse(entries[0].is_directory)
         self.assertEqual(entries[0].parent_id, self.sub_dir.id)
-        self.assertEqual(pagination.total, 1)
+        self.assertEqual(len(entries), 1)
 
         # search for a folder
-        entries, pagination = self.client.file.find(self.sub_name, path=self.root_dir)
+        entries = self.client.file.find(self.sub_name, path=self.root_dir)
         self.assertEqual(entries[0].id, self.sub_dir.id)
         self.assertEqual(entries[0].name, self.sub_dir.name)
         self.assertTrue(entries[0].is_directory)
         self.assertEqual(entries[0].parent_id, self.root_dir.id)
-        self.assertEqual(pagination.total, 1)
+        self.assertEqual(len(entries), 1)
 
         # search for a non-existent file
-        entries, pagination = self.client.file.find("root.bin", path=self.sub_dir)
+        entries = self.client.file.find("root.bin", path=self.sub_dir)
         self.assertEqual(len(entries), 0)
-        self.assertEqual(pagination.total, 0)
 
     def test_find_global_search(self):
-        entries, pagination = self.client.file.find(self.sub_dir.name)
+        entries = self.client.file.find(self.sub_dir.name)
         self.assertEqual(entries[0].id, self.sub_dir.id)
         self.assertEqual(entries[0].name, self.sub_dir.name)
         self.assertEqual(entries[0].parent_id, self.root_dir.id)
         self.assertTrue(entries[0].is_directory)
-        self.assertEqual(pagination.total, 1)
+        self.assertEqual(len(entries), 1)
 
 
 class TestDownloadInfo(BaseTestCase):

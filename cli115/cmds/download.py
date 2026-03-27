@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli115.client.models import CloudTask
-from cli115.cmds.base import BaseCommand
+from cli115.cmds.base import BaseCommand, PaginationCommand
 from cli115.cmds.formatter import format_size, ListFormatterMixin, PairFormatterMixin
 
 
@@ -75,28 +74,16 @@ class DownloadQuotaCommand(PairFormatterMixin, BaseCommand):
         )
 
 
-class DownloadListCommand(ListFormatterMixin, BaseCommand):
+class DownloadListCommand(ListFormatterMixin, PaginationCommand):
     """List cloud download tasks."""
 
-    def register(self, parser: argparse.ArgumentParser) -> None:
-        super().register(parser)
-        parser.add_argument(
-            "--page", type=int, default=None, help="Page number (default: 1)"
-        )
-
     def execute(self, args: argparse.Namespace) -> None:
-        user_specified_page = args.page is not None
-        page = args.page if args.page is not None else 1
         client = self._create_client()
-        tasks, pagination = client.download.list(page)
+        collection = client.download.list()
+
+        tasks = self.apply_pagination(collection, args)
         records = [_task_record(t) for t in tasks]
         self.output(records, args)
-        if not user_specified_page and pagination.total > pagination.limit:
-            print(
-                f"Warning: {pagination.total} tasks total, showing first "
-                f"{len(tasks)}. Use --page to paginate.",
-                file=sys.stderr,
-            )
 
 
 class DownloadAddCommand(ListFormatterMixin, BaseCommand):

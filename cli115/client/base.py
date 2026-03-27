@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import fields
 from os import PathLike
-from typing import BinaryIO, Callable
+from typing import BinaryIO, Callable, Sequence
 
 import httpx
 
@@ -22,6 +21,7 @@ from cli115.client.models import (
     SortField,
     SortOrder,
 )
+from cli115.client.lazy import LazyPathCollection, LazyCollection
 
 
 DEFAULT_PAGE_SIZE = 115  # Default number of items to return in list operations
@@ -71,12 +71,23 @@ class DownloadClient(ABC):
             A DownloadQuota with remaining and total quota.
         """
 
+    def list(self) -> Sequence[CloudTask]:
+        """Return a lazy collection of all cloud download tasks.
+
+        Warning: Avoid fully loading all tasks if you don't know the total
+        number of items, as this will trigger many API requests.
+        """
+        return LazyCollection(self._list, page_size=30)
+
     @abstractmethod
-    def list(self, page: int = 1) -> tuple[list[CloudTask], Pagination]:
+    def _list(
+        self, page: int = 1, page_size: int = 30
+    ) -> tuple[list[CloudTask], Pagination]:
         """List cloud download tasks.
 
         Args:
             page: Page number (1-based).
+            page_size: Number of items per page.
 
         Returns:
             A tuple of (tasks, pagination).
@@ -151,14 +162,54 @@ class FileClient(ABC):
             A Directory or File object.
         """
 
-    @abstractmethod
     def list(
         self,
         path: str | Directory = "/",
         *,
         sort: SortField = SortField.FILENAME,
         sort_order: SortOrder = SortOrder.ASC,
-        limit: int = 115,
+    ) -> Sequence[Directory | File]:
+        """Return a lazy collection of directory entries.
+
+        Warning: Avoid fully loading all items if you don't know the total
+        number of items, as this will trigger many API requests.
+
+        Args:
+            path: Directory path or :class:`Directory` object. ``"/"`` for root.
+            sort: Sort field.
+            sort_order: :attr:`SortOrder.ASC` or :attr:`SortOrder.DESC`.
+
+        Returns:
+            A :class:`~cli115.helpers.LazyCollection` of directory entries.
+        """
+
+        if not isinstance(path, Directory):
+            # eagerly resolve the path to validate its existence
+            path = self.stat(path)
+            if not path.is_directory:
+                raise NotADirectoryError(f"Not a directory: {path}")
+
+        def fetch(
+            page: int, page_size: int
+        ) -> tuple[list[Directory | File], Pagination]:
+            return self._list(
+                path,
+                sort=sort,
+                sort_order=sort_order,
+                limit=page_size,
+                offset=(page - 1) * page_size,
+            )
+
+        return LazyCollection(fetch, page_size=DEFAULT_PAGE_SIZE)
+
+    @abstractmethod
+    def _list(
+        self,
+        path: str | Directory = "/",
+        *,
+        sort: SortField = SortField.FILENAME,
+        sort_order: SortOrder = SortOrder.ASC,
+        limit: int = DEFAULT_PAGE_SIZE,
         offset: int = 0,
     ) -> tuple[list[Directory | File], Pagination]:
         """List files and directories under the given path.
@@ -174,8 +225,39 @@ class FileClient(ABC):
             A tuple of (items, pagination).
         """
 
-    @abstractmethod
     def find(
+        self,
+        query: str,
+        *,
+        path: str | Directory | None = None,
+    ) -> Sequence[Directory | File]:
+        """Return a lazy collection of search results.
+
+        Warning: Avoid fully loading all items if you don't know the total
+        number of items, as this will trigger many API requests.
+
+        Args:
+            query: Search string.
+            path: Directory to search within. ``None`` for a global search.
+
+        Returns:
+            A :class:`~cli115.helpers.LazyPathCollection` of matching entries.
+        """
+
+        def fetch(
+            page: int, page_size: int
+        ) -> tuple[list[Directory | File], Pagination]:
+            return self._find(
+                query,
+                path=path,
+                limit=page_size,
+                offset=(page - 1) * page_size,
+            )
+
+        return LazyPathCollection(fetch, page_size=DEFAULT_PAGE_SIZE)
+
+    @abstractmethod
+    def _find(
         self,
         query: str,
         *,
@@ -385,47 +467,6 @@ class FileClient(ABC):
         """
         info = self.url(path)
         return RemoteFile(info)
-
-
-class LazyPathMixin:
-    """Mixin that lazily resolves the ``path`` attribute by walking up the
-    parent-directory chain via the ``id()`` method.
-
-    Attach a ``FileClient`` instance to ``_file_client`` after construction.
-    When ``.path`` is first accessed and is ``None``, the mixin calls
-    ``_file_client.id(parent_id)`` recursively up to the root and caches the
-    resulting absolute path string so the walk only happens once.
-    """
-
-    _file_client = None
-
-    @property
-    def path(self):
-        val = self.__dict__.get("path")
-        if val is not None:
-            return val
-        parts = [self.name]
-        parent_id = self.parent_id
-        while parent_id and parent_id != "0":
-            parent = self._file_client.id(parent_id)
-            parts.append(parent.name)
-            parent_id = parent.parent_id
-        val = "/" + "/".join(reversed(parts))
-        self.__dict__["path"] = val
-        return val
-
-    @path.setter
-    def path(self, value):
-        pass  # ignore attempts to set path directly
-
-
-def new_lazy_cls(item: FileSystemEntry, client: FileClient) -> FileSystemEntry:
-    cls = item.__class__
-    cls = type(cls.__name__, (LazyPathMixin, cls), {})
-    attrs = {f.name: getattr(item, f.name) for f in fields(item)}
-    rv = cls(**attrs)
-    rv._file_client = client
-    return rv
 
 
 class RemoteFile:

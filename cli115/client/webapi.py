@@ -17,9 +17,9 @@ from cli115.client.base import (
     FileClient,
     MAX_PAGE_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
-    new_lazy_cls,
     RemoteFile,
 )
+from cli115.client.lazy import new_lazy_cls
 from cli115.client.models import (
     AccountInfo,
     CloudTask,
@@ -129,7 +129,7 @@ class WebAPIFileClient(FileClient):
     def stat(self, path: str) -> Directory | File:
         return self._resolve_entry(path)
 
-    def list(
+    def _list(
         self,
         path: str | Directory = "/",
         *,
@@ -181,7 +181,7 @@ class WebAPIFileClient(FileClient):
         )
         return items, pagination
 
-    def find(
+    def _find(
         self,
         query: str,
         *,
@@ -241,8 +241,8 @@ class WebAPIFileClient(FileClient):
     def delete(self, path: str | FileSystemEntry, *, recursive: bool = False) -> None:
         entry = self._resolve_entry(path)
         if not recursive and entry.is_directory:
-            _, pagination = self.list(path, limit=1)
-            if pagination.total > 0:
+            items = self.list(path)
+            if len(items) > 0:
                 raise DirectoryNotEmptyError(f"Directory is not empty: {path}")
         resp = self._client._api.fs_delete(entry.id)
         check_response(resp)
@@ -466,22 +466,6 @@ class WebAPIFileClient(FileClient):
         raise NotFoundError(f"Not found: {path}", errno=990002)
 
 
-def _parse_task(task: dict) -> CloudTask:
-    """Convert a raw task dict from the API into a CloudTask."""
-    return CloudTask(
-        info_hash=task.get("info_hash", ""),
-        name=task.get("name", ""),
-        size=int(task.get("size", 0)),
-        status=TaskStatus(int(task.get("status", 0))),
-        percent_done=float(task.get("percentDone", 0)),
-        url=task.get("url", ""),
-        file_id=str(task.get("file_id", "") or ""),
-        pick_code=task.get("pick_code", "") or "",
-        folder_id=str(task.get("wp_path_id", "") or ""),
-        add_time=parse_ts(task.get("add_time")),
-    )
-
-
 class WebAPIDownloadClient(DownloadClient):
 
     def __init__(self, client: WebAPIClient):
@@ -495,14 +479,17 @@ class WebAPIDownloadClient(DownloadClient):
             total=int(resp.get("total", 0)),
         )
 
-    def list(self, page: int = 1) -> tuple[list[CloudTask], Pagination]:
+    def _list(
+        self, page: int = 1, page_size: int = 30
+    ) -> tuple[list[CloudTask], Pagination]:
         resp = self._client._api.offline_list({"page": page})
         resp = check_response(resp)
-        tasks = [_parse_task(t) for t in resp.get("tasks", [])]
+        tasks = [self._parse_task(t) for t in resp.get("tasks", [])]
+        page_size = int(resp.get("page_row", resp.get("page_size", page_size)))
         pagination = Pagination(
             total=int(resp.get("count", 0)),
-            offset=(int(resp.get("page", 1)) - 1) * int(resp.get("page_row", 30)),
-            limit=int(resp.get("page_row", 30)),
+            offset=(int(resp.get("page", 1)) - 1) * page_size,
+            limit=page_size,
         )
         return tasks, pagination
 
@@ -556,5 +543,20 @@ class WebAPIDownloadClient(DownloadClient):
 
     def _fetch_tasks_map(self) -> dict[str, CloudTask]:
         """Fetch the first page of tasks and return a dict keyed by info_hash."""
-        tasks, _ = self.list(page=1)
+        tasks, _ = self._list(page=1)
         return {t.info_hash: t for t in tasks}
+
+    def _parse_task(self, task: dict) -> CloudTask:
+        """Convert a raw task dict from the API into a CloudTask."""
+        return CloudTask(
+            info_hash=task.get("info_hash", ""),
+            name=task.get("name", ""),
+            size=int(task.get("size", 0)),
+            status=TaskStatus(int(task.get("status", 0))),
+            percent_done=float(task.get("percentDone", 0)),
+            url=task.get("url", ""),
+            file_id=str(task.get("file_id", "") or ""),
+            pick_code=task.get("pick_code", "") or "",
+            folder_id=str(task.get("wp_path_id", "") or ""),
+            add_time=parse_ts(task.get("add_time")),
+        )
