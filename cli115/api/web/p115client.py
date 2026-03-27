@@ -57,7 +57,9 @@ class P115Client(BaseP115Client):
     @staticmethod
     def _is_waf_blocked(exc: HTTPStatusError) -> bool:
         """Return True if the error is an Aliyun WAF block (HTTP 405 with WAF body)."""
-        if exc.code != 405 or exc.headers["Content-Type"] != "text/html":
+        if exc.code != 405 or not dict(exc.headers).get("Content-Type", "").startswith(
+            "text/html"
+        ):
             return False
         body_text = exc.response_body.decode("utf-8", errors="replace")
         return "aliyun.com" in body_text or "alicdn.com" in body_text

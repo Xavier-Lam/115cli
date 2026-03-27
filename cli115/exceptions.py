@@ -9,7 +9,8 @@ class APIError(Exception):
 
     def __init__(self, message: str, errno: int = 0):
         self.errno = errno
-        super().__init__(f"[{errno}] {message}")
+        message = f"[{errno}] {message}" if errno else message
+        super().__init__(message)
 
 
 class AuthenticationError(APIError):
