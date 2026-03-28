@@ -1,3 +1,4 @@
+import logging
 from property import locked_cacheproperty
 
 from httpcore_request import HTTPStatusError
@@ -9,6 +10,9 @@ from cli115.exceptions import (
     NotFoundError,
     WAFBlockedError,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class P115Client(BaseP115Client):
@@ -29,6 +33,15 @@ class P115Client(BaseP115Client):
         **request_kwargs,
     ):
         try:
+            message = f"Requesting {method} {url}"
+            params = request_kwargs.get("params")
+            if params:
+                message += f"\n    └─ Params: {params}"
+            data = request_kwargs.get("data")
+            if data is not None:
+                message += f"\n    └─ Payload: {data}"
+            logger.debug(message)
+
             return super().request(
                 url,
                 method,

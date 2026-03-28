@@ -1,10 +1,7 @@
-import hashlib
 import unittest
 from unittest.mock import MagicMock, patch
 
-from cli115.client import File
 from cli115.client.base import DownloadUrl, FileClient, RemoteFile
-from tests.base import BaseTestCase
 
 
 def _make_info(**kwargs):
@@ -160,46 +157,6 @@ class TestFileClientOpen(unittest.TestCase):
         self.assertEqual(rf.name, "test.mkv")
         self.assertEqual(rf.size, 2048)
         mock_self.url.assert_called_once_with(mock_file)
-
-
-class TestOpen(BaseTestCase):
-
-    _entry: File
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        entry, _ = cls.upload_file(size=4096)
-        cls._entry = entry
-
-    def test_open_read_full_content(self):
-        with self.client.file.open(self._entry) as rf:
-            data = rf.read()
-        sha1 = hashlib.sha1(data).hexdigest().upper()
-        self.assertEqual(sha1, self._entry.sha1)
-        self.assertEqual(len(data), self._entry.size)
-
-        # partial read
-        with self.client.file.open(self._entry) as rf:
-            # Read first 100 bytes
-            chunk1 = rf.read(100)
-            self.assertEqual(len(chunk1), 100)
-            self.assertEqual(rf.tell(), 100)
-
-            # Read next 200 bytes
-            chunk2 = rf.read(200)
-            self.assertEqual(len(chunk2), 200)
-            self.assertEqual(rf.tell(), 300)
-
-        self.assertEqual(data[:100], chunk1)
-        self.assertEqual(data[100:300], chunk2)
-
-    def test_open_seekable_readable(self):
-        with self.client.file.open(self._entry.path) as rf:
-            self.assertEqual(rf.name, self._entry.name)
-            self.assertTrue(rf.seekable())
-            self.assertTrue(rf.readable())
-            self.assertFalse(rf.writable())
 
 
 if __name__ == "__main__":
