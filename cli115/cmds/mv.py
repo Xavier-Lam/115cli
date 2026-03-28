@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli115.cmds.base import BaseCommand
+from cli115.exceptions import CommandLineError
 
 
 class MvCommand(BaseCommand):
@@ -18,11 +18,9 @@ class MvCommand(BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         if len(args.paths) < 2:
-            print(
-                "Error: mv requires at least a source and destination path.",
-                file=sys.stderr,
+            raise CommandLineError(
+                "Error: mv requires at least a source and destination path."
             )
-            sys.exit(1)
 
         *src_paths, dst_path = args.paths
         client = self._create_client()

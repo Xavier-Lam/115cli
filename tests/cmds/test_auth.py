@@ -9,7 +9,7 @@ from cli115.auth.cookie import CookieAuth
 from cli115.cli import build_parser
 from cli115.client.models import AccountInfo
 from cli115.credentials import CredentialManager, CredType, CURRENT_CREDENTIAL_FILE
-from cli115.exceptions import CommandError
+from cli115.exceptions import CommandLineError
 
 
 COOKIE_STRING = "UID=user1; CID=cid1; SEID=seid1; KID=kid1"
@@ -286,5 +286,5 @@ class TestLogoutCommand:
         cm = CredentialManager(config)
         parser, commands = build_parser(config=config, credential_manager=cm)
         args = parser.parse_args(["account"])
-        with pytest.raises(CommandError):
+        with pytest.raises(CommandLineError):
             commands["account"].execute(args)

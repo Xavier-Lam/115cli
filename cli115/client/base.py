@@ -149,6 +149,9 @@ class FileClient(ABC):
 
         Returns:
             A Directory or File object.
+
+        Raises:
+            cli115.exceptions.NotFoundError: If the path does not exist.
         """
 
     @abstractmethod
@@ -160,6 +163,9 @@ class FileClient(ABC):
 
         Returns:
             A Directory or File object.
+
+        Raises:
+            cli115.exceptions.NotFoundError: If the path does not exist.
         """
 
     def list(

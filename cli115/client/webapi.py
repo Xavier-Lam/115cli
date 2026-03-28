@@ -37,7 +37,6 @@ from cli115.client.models import (
 from cli115.client.utils import parse_item, parse_ts
 from cli115.exceptions import (
     AlreadyExistsError,
-    DirectoryNotEmptyError,
     InstantUploadNotAvailableError,
     NotFoundError,
 )
@@ -243,7 +242,7 @@ class WebAPIFileClient(FileClient):
         if not recursive and entry.is_directory:
             items = self.list(path)
             if len(items) > 0:
-                raise DirectoryNotEmptyError(f"Directory is not empty: {path}")
+                raise AlreadyExistsError(f"Directory is not empty: {path}")
         resp = self._client._api.fs_delete(entry.id)
         check_response(resp)
 

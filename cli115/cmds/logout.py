@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 
-from build.lib.cli115.exceptions import CommandError
 from cli115.cmds.base import BaseCommand
 from cli115.credentials import CredType
+from cli115.exceptions import CommandLineError
 
 
 class LogoutCommand(BaseCommand):
@@ -36,7 +36,7 @@ class LogoutCommand(BaseCommand):
             current_uid = None
 
         if not args.username and not current_uid:
-            raise CommandError(
+            raise CommandLineError(
                 "Error: No active user to log out. Use '115cli login' to log in."
             )
 

@@ -54,6 +54,8 @@ pip install 115cli
 115cli upload /local/file.txt /remote/dir/file.txt
 # 仅秒传
 115cli upload --instant-only /local/file.txt /remote/dir/file.txt
+# 文件夹上传
+115cli upload /local/folder/ /remote/dir/
 
 # 离线下载
 115cli download quota

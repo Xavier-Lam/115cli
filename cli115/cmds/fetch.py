@@ -10,6 +10,7 @@ import time
 from tqdm import tqdm
 
 from cli115.cmds.base import BaseCommand
+from cli115.exceptions import CommandLineError
 from cli115.helpers import parse_size, sha1_file
 
 
@@ -78,9 +79,13 @@ class FetchCommand(BaseCommand):
                 print("Checking file integrity...")
                 sha1, size = sha1_file(f)
                 if size != info.size:
-                    raise ValueError(f"Size mismatch: expected {info.size}, got {size}")
+                    raise CommandLineError(
+                        f"Size mismatch: expected {info.size}, got {size}"
+                    )
                 if sha1 != info.sha1:
-                    raise ValueError(f"SHA1 mismatch: expected {info.sha1}, got {sha1}")
+                    raise CommandLineError(
+                        f"SHA1 mismatch: expected {info.sha1}, got {sha1}"
+                    )
 
         print(f"Saved to {output}")
 

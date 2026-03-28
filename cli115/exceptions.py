@@ -13,32 +13,12 @@ class APIError(Exception):
         super().__init__(message)
 
 
-class AuthenticationError(APIError):
-    """Raised when authentication fails or credentials are invalid."""
-
-
-class SessionExpiredError(AuthenticationError):
-    """Raised when the session has expired."""
-
-
 class NotFoundError(APIError):
     """Raised when a requested file or directory is not found."""
 
 
 class AlreadyExistsError(APIError):
     """Raised when a resource with the same name already exists."""
-
-
-class PermissionDeniedError(APIError):
-    """Raised when the user lacks permission."""
-
-
-class InvalidParameterError(APIError):
-    """Raised when an API call receives invalid parameters."""
-
-
-class DirectoryNotEmptyError(APIError):
-    """Raised when attempting to delete a non-empty directory non-recursively."""
 
 
 class WAFBlockedError(APIError):
@@ -55,7 +35,7 @@ class InstantUploadNotAvailableError(APIError):
     on the server (i.e. the file has never been uploaded before)."""
 
 
-class CommandError(Exception):
+class CommandLineError(Exception):
     """Friendly error message for CLI command failures."""
 
     pass

@@ -9,7 +9,7 @@ from cli115.client import create_client
 from cli115.client.models import AccountInfo
 from cli115.cmds.base import BaseCommand
 from cli115.credentials import CredType
-from cli115.exceptions import CommandError
+from cli115.exceptions import CommandLineError
 from cli115.helpers import parse_cookie_string
 
 
@@ -67,7 +67,7 @@ class AuthCookieCommand(BaseCommand):
         if args.cookie_value:
             return parse_cookie_string(args.cookie_value)
         if not (args.uid and args.cid and args.seid and args.kid):
-            raise CommandError(
+            raise CommandLineError(
                 "Error: Provide either a cookie string or all of --uid, --cid, --seid, --kid"
             )
         return {
@@ -81,7 +81,7 @@ class AuthCookieCommand(BaseCommand):
         required = {"UID", "CID", "SEID", "KID"}
         missing = required - set(cookies.keys())
         if missing:
-            raise CommandError(
+            raise CommandLineError(
                 f"Error: Missing required cookies: {', '.join(sorted(missing))}"
             )
 

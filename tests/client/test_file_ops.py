@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from cli115.exceptions import AlreadyExistsError, DirectoryNotEmptyError
+from cli115.exceptions import AlreadyExistsError
 from tests.client.conftest import upload_file
 
 
@@ -79,7 +79,7 @@ class TestDelete:
         dir_path = f"{root_dir.path}/{name}"
         directory = api_client.file.create_directory(dir_path)
         api_client.file.create_directory(f"{dir_path}/inner")
-        with pytest.raises(DirectoryNotEmptyError):
+        with pytest.raises(AlreadyExistsError):
             api_client.file.delete(dir_path, recursive=False)
 
         api_client.file.delete(dir_path, recursive=True)

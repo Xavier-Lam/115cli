@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import os
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
+from cli115.exceptions import AlreadyExistsError, CommandLineError
+from cli115.tools import upload
 
 
 class UploadCommand(PairFormatterMixin, BaseCommand):
@@ -26,23 +27,15 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         )
 
     def execute(self, args: argparse.Namespace) -> None:
-        client = self._create_client()
-
-        # If remote path points to an existing directory, append the
-        # local filename to form the final destination path.
-        remote_path = args.remote_path
         try:
-            entry = client.file.stat(remote_path)
-            if entry.is_directory:
-                file_name = os.path.basename(args.local_path)
-                remote_path = remote_path.rstrip("/") + "/" + file_name
-        except Exception:
-            pass
-
-        result = client.file.upload(
-            remote_path,
-            args.local_path,
-            instant_only=args.instant_only,
-        )
-
+            result = upload(
+                self._create_client(),
+                args.local_path,
+                args.remote_path,
+                instant_only=args.instant_only,
+            )
+        except AlreadyExistsError:
+            raise CommandLineError(
+                f"Cannot upload directory: remote path '{args.remote_path}' is a file"
+            )
         self.output(format_entry(result), args)

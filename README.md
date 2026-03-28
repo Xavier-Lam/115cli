@@ -54,6 +54,8 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli upload /local/file.txt /remote/dir/file.txt
 # Upload with instant upload only
 115cli upload --instant-only /local/file.txt /remote/dir/file.txt
+# Upload a folder
+115cli upload /local/folder/ /remote/dir/
 
 # Cloud download (offline download)
 115cli download quota
