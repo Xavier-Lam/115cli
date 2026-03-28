@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import argparse
+from configparser import ConfigParser
 import sys
 from typing import Sequence, TypeVar
 
 from cli115.auth.cookie import CookieAuth
 from cli115.client import Client, create_client
-from cli115.cmds.config import load_current_credential
+from cli115.credentials import CredentialManager
 
 
 T = TypeVar("T")
@@ -18,6 +19,14 @@ T = TypeVar("T")
 class BaseCommand(ABC):
     """Abstract base for all CLI commands."""
 
+    def __init__(
+        self,
+        config: ConfigParser | None = None,
+        credential_manager: CredentialManager | None = None,
+    ) -> None:
+        self.cfg = config
+        self.cm = credential_manager
+
     def register(self, parser: argparse.ArgumentParser) -> None:
         """Register arguments on the given parser."""
 
@@ -25,19 +34,23 @@ class BaseCommand(ABC):
     def execute(self, args: argparse.Namespace) -> None:
         """Execute the command with parsed arguments."""
 
-    def _create_client(self) -> Client:
-        cred = load_current_credential()
-        if cred["type"] == "cookie":
-            cookies = cred["cookies"]
-            auth = CookieAuth(
-                uid=cookies["UID"],
-                cid=cookies["CID"],
-                seid=cookies["SEID"],
-                kid=cookies["KID"],
-            )
+    def _create_client(
+        self, uid: str | None = None, cred_type: str | None = None
+    ) -> Client:
+        if uid:
+            cred_type, cred = self.cm.get_credential(uid, cred_type)
         else:
-            raise ValueError(f"Unsupported credential type: {cred['type']}")
-        return create_client(auth)
+            cred_type, cred = self.cm.current_credential
+        if cred_type == "cookie":
+            auth = CookieAuth(
+                uid=cred["UID"],
+                cid=cred["CID"],
+                seid=cred["SEID"],
+                kid=cred["KID"],
+            )
+            return create_client(auth)
+        else:
+            raise ValueError(f"Unsupported credential type: {cred_type}")
 
 
 class PaginationCommand(BaseCommand, ABC):

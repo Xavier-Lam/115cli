@@ -31,11 +31,12 @@ def _task_record(task: CloudTask) -> list[tuple[str, object]]:
 class DownloadCommand(BaseCommand):
     """Cloud download (offline) operations."""
 
-    def __init__(self):
-        self._quota_cmd = DownloadQuotaCommand()
-        self._list_cmd = DownloadListCommand()
-        self._add_cmd = DownloadAddCommand()
-        self._delete_cmd = DownloadDeleteCommand()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._quota_cmd = DownloadQuotaCommand(*args, **kwargs)
+        self._list_cmd = DownloadListCommand(*args, **kwargs)
+        self._add_cmd = DownloadAddCommand(*args, **kwargs)
+        self._delete_cmd = DownloadDeleteCommand(*args, **kwargs)
 
     def register(self, parser: argparse.ArgumentParser) -> None:
         sub = parser.add_subparsers(dest="download_action", required=True)

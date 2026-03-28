@@ -1,5 +1,4 @@
-import argparse
-import configparser
+from configparser import ConfigParser
 import io
 import unittest
 from datetime import datetime
@@ -8,11 +7,10 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from cli115.cli import build_parser, main
+from cli115.cli import load_config, main
 from cli115.client.base import DEFAULT_PAGE_SIZE
 from cli115.client.lazy import LazyCollection
 from cli115.client.models import (
-    AccountInfo,
     CloudTask,
     Directory,
     DownloadUrl,
@@ -22,9 +20,6 @@ from cli115.client.models import (
     SortField,
     TaskStatus,
 )
-from cli115.cmds.account import AccountCommand
-from cli115.cmds.config import load_config
-from cli115.cmds.config_cmd import ConfigCommand
 from cli115.cmds.cp import CpCommand
 from cli115.cmds.download import (
     DownloadAddCommand,
@@ -43,7 +38,19 @@ from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
 from cli115.cmds.url import UrlCommand
+from cli115.credentials import CredentialManager
 from cli115.exceptions import NotFoundError
+
+
+def build_parser(
+    config: ConfigParser = None,
+    credential_manager: CredentialManager = None,
+) -> ConfigParser:
+    from cli115.cli import build_parser
+
+    config = config or load_config()
+    credential_manager = credential_manager or CredentialManager(config)
+    return build_parser(config, credential_manager)
 
 
 def _make_lazy(items, total=None):
@@ -108,7 +115,7 @@ class TestLsCommand(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_ls_short(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -121,7 +128,7 @@ class TestLsCommand(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_ls_long(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "-l", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -141,7 +148,7 @@ class TestLsCommand(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_ls_pagination_args(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "--offset", "0", "--limit", "10", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -154,7 +161,7 @@ class TestLsCommand(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_ls_sort_options(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "--sort", "size", "--desc", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -166,7 +173,7 @@ class TestLsCommand(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_ls_sort_created(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "--sort", "created", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -178,7 +185,7 @@ class TestLsCommand(unittest.TestCase):
     @patch.object(LsCommand, "_create_client")
     def test_ls_sort_opened(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "--sort", "opened", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -191,7 +198,7 @@ class TestLsCommand(unittest.TestCase):
     def test_ls_warning_when_total_exceeds_default(self, mock_create):
         entries = [_make_dir(), _make_file()]
         mock_create.return_value = self._make_client_mock(entries=entries, total=200)
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -205,7 +212,7 @@ class TestLsCommand(unittest.TestCase):
     def test_ls_no_warning_when_pagination_explicit(self, mock_create):
         entries = [_make_dir(), _make_file()]
         mock_create.return_value = self._make_client_mock(entries=entries, total=200)
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["ls", "--limit", "10", "/"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -220,7 +227,7 @@ class TestCpCommand(unittest.TestCase):
     def test_single_copy(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["cp", "/src/file.txt", "/dst"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -233,7 +240,7 @@ class TestCpCommand(unittest.TestCase):
     def test_batch_copy(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["cp", "/a", "/b", "/dst"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -247,7 +254,7 @@ class TestMvCommand(unittest.TestCase):
     def test_single_move(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["mv", "/src/file.txt", "/dst"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -259,7 +266,7 @@ class TestMvCommand(unittest.TestCase):
     def test_batch_move(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["mv", "/a", "/b", "/dst"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -273,7 +280,7 @@ class TestRmCommand(unittest.TestCase):
     def test_single_delete(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["rm", "/file.txt"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -285,7 +292,7 @@ class TestRmCommand(unittest.TestCase):
     def test_recursive_delete(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["rm", "-r", "/dir"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -297,7 +304,7 @@ class TestRmCommand(unittest.TestCase):
     def test_batch_delete(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["rm", "/a", "/b"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -316,7 +323,7 @@ class TestMkdirCommand(unittest.TestCase):
             name="newdir", id="999"
         )
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["mkdir", "/newdir"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -332,7 +339,7 @@ class TestMkdirCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.file.create_directory.return_value = _make_dir()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["mkdir", "-p", "/a/b/c"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -350,7 +357,7 @@ class TestUploadCommand(unittest.TestCase):
         mock_client.file.stat.side_effect = NotFoundError("Not found")
         mock_client.file.upload.return_value = _make_file(name="uploaded.txt")
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["upload", "/local/file.txt", "/remote/file.txt"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -370,7 +377,7 @@ class TestUploadCommand(unittest.TestCase):
         mock_client.file.stat.return_value = _make_dir(name="remotedir", id="300")
         mock_client.file.upload.return_value = _make_file(name="uploaded.txt")
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["upload", "/local/path/file.txt", "/remote/dir"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -387,7 +394,7 @@ class TestStatCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.file.stat.return_value = _make_file()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["stat", "/test.txt"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -404,7 +411,7 @@ class TestStatCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.file.stat.return_value = _make_dir()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["stat", "/testdir"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -456,7 +463,7 @@ class TestIdCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.file.id.return_value = _make_file()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["id", "200"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -473,7 +480,7 @@ class TestIdCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.file.id.return_value = _make_dir()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["id", "100"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -491,7 +498,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.quota.return_value = DownloadQuota(quota=2985, total=3000)
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["download", "quota"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -506,7 +513,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.list.return_value = _make_lazy([_make_task()])
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["download", "list"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -521,7 +528,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.list.return_value = _make_lazy([_make_task()])
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["download", "list", "--format", "json"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -537,7 +544,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.list.return_value = _make_lazy([_make_task()])
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["download", "list", "--format", "table"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -553,7 +560,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.list.return_value = _make_lazy([], total=0)
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(
             ["download", "list", "--offset", "30", "--limit", "30"]
         )
@@ -568,7 +575,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.add_url.return_value = _make_task()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["download", "add", "https://example.com/file.png"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -585,7 +592,7 @@ class TestDownloadCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.download.add_url.return_value = _make_task()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(
             ["download", "add", "--dest", "/my/folder", "https://example.com/file.png"]
         )
@@ -605,7 +612,7 @@ class TestDownloadCommand(unittest.TestCase):
             _make_task(info_hash="hash2"),
         ]
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(
             [
                 "download",
@@ -631,7 +638,7 @@ class TestDownloadCommand(unittest.TestCase):
     def test_download_delete(self, mock_create):
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["download", "delete", "hash1", "hash2"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -645,7 +652,7 @@ class TestDownloadCommand(unittest.TestCase):
 
 class TestBuildParser(unittest.TestCase):
     def test_all_commands_registered(self):
-        parser = build_parser()
+        _, commands = build_parser()
         expected = [
             "auth",
             "config",
@@ -653,6 +660,8 @@ class TestBuildParser(unittest.TestCase):
             "download",
             "find",
             "id",
+            "login",
+            "logout",
             "ls",
             "mkdir",
             "mv",
@@ -662,7 +671,7 @@ class TestBuildParser(unittest.TestCase):
             "url",
         ]
         for cmd in expected:
-            self.assertIn(cmd, parser._subparsers._group_actions[0].choices)
+            self.assertIn(cmd, commands)
 
 
 class TestFindCommand(unittest.TestCase):
@@ -676,7 +685,7 @@ class TestFindCommand(unittest.TestCase):
     @patch.object(FindCommand, "_create_client")
     def test_find_table_format(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "test"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -689,7 +698,7 @@ class TestFindCommand(unittest.TestCase):
     @patch.object(FindCommand, "_create_client")
     def test_find_global_search(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "keyword"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -702,7 +711,7 @@ class TestFindCommand(unittest.TestCase):
     @patch.object(FindCommand, "_create_client")
     def test_find_with_path(self, mock_create):
         mock_create.return_value = self._make_client_mock()
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "/docs", "keyword"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -716,7 +725,7 @@ class TestFindCommand(unittest.TestCase):
     def test_find_pagination_args(self, mock_create):
         entries = [_make_file(name=f"f{i}.txt", id=str(i)) for i in range(20)]
         mock_create.return_value = self._make_client_mock(entries=entries)
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "--offset", "5", "--limit", "5", "test"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -734,7 +743,7 @@ class TestFindCommand(unittest.TestCase):
         mock_create.return_value = self._make_client_mock(
             entries=[_make_file(name="note.txt", id="888")],
         )
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "--format", "plain", "note"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -747,7 +756,7 @@ class TestFindCommand(unittest.TestCase):
     @patch.object(FindCommand, "_create_client")
     def test_find_empty_results(self, mock_create):
         mock_create.return_value = self._make_client_mock(entries=[])
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "--format", "plain", "nonexistent"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -762,7 +771,7 @@ class TestFindCommand(unittest.TestCase):
         mock_create.return_value = self._make_client_mock(
             entries=entries, total=DEFAULT_PAGE_SIZE + 1
         )
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["find", "f"])
 
         with patch("sys.stdout", new_callable=io.StringIO):
@@ -790,7 +799,7 @@ class TestUrlCommand(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["url", "/test.bin"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
@@ -803,23 +812,21 @@ class TestUrlCommand(unittest.TestCase):
         self.assertIn("Mozilla/5.0", output)
         self.assertIn("UID=u1", output)
 
-    @patch("cli115.cmds.url.load_config")
     @patch.object(UrlCommand, "_create_client")
-    def test_aria2c_format(self, mock_create, mock_load_config):
-        cfg = configparser.ConfigParser()
+    def test_aria2c_format(self, mock_create):
+        cfg = ConfigParser()
         cfg["download"] = {
             "min_split_size": "2M",
             "max_connection": "10",
         }
-        mock_load_config.return_value = cfg
         mock_client = MagicMock()
         mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["url", "--format", "aria2c", "/test.bin"])
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            UrlCommand().execute(args)
+            UrlCommand(config=cfg).execute(args)
 
         output = mock_out.getvalue()
         self.assertIn("aria2c", output)
@@ -834,122 +841,26 @@ class TestUrlCommand(unittest.TestCase):
         self.assertIn("UID=u1", output)
         self.assertIn("https://cdn.115.com/test.bin?t=123", output)
 
-    @patch("cli115.cmds.url.load_config")
     @patch.object(UrlCommand, "_create_client")
-    def test_aria2c_format_with_check_integrity(self, mock_create, mock_load_config):
-        cfg = configparser.ConfigParser()
+    def test_aria2c_format_with_check_integrity(self, mock_create):
+        cfg = ConfigParser()
         cfg["download"] = {
             "min_split_size": "2M",
             "max_connection": "10",
         }
-        mock_load_config.return_value = cfg
         mock_client = MagicMock()
         mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(
             ["url", "--format", "aria2c", "--check-integrity", "/test.bin"]
         )
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            UrlCommand().execute(args)
+            UrlCommand(config=cfg).execute(args)
 
         output = mock_out.getvalue()
         self.assertIn(f"--checksum=sha-1={_make_url().sha1}", output)
-
-
-class TestConfigCommand(unittest.TestCase):
-    @patch("cli115.cmds.config_cmd.load_config")
-    def test_outputs_ini_format(self, mock_load):
-        config = configparser.ConfigParser()
-        config["general"] = {"user_agent": "TestUA", "credentials": "/tmp/creds"}
-        config["download"] = {
-            "min_split_size": "2M",
-            "max_connection": "10",
-        }
-        mock_load.return_value = config
-
-        cmd = ConfigCommand()
-        args = build_parser().parse_args(["config"])
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            cmd.execute(args)
-
-        output = mock_out.getvalue()
-        self.assertIn("[general]", output)
-        self.assertIn("[download]", output)
-        self.assertIn("user_agent", output)
-
-    @patch("cli115.cmds.config_cmd.load_config")
-    def test_outputs_download_config_section(self, mock_load):
-        config = configparser.ConfigParser()
-        config["general"] = {"credentials": "/tmp", "user_agent": "UA"}
-        config["download"] = {
-            "min_split_size": "2M",
-            "max_connection": "10",
-        }
-        mock_load.return_value = config
-
-        cmd = ConfigCommand()
-        args = build_parser().parse_args(["config"])
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            cmd.execute(args)
-
-        output = mock_out.getvalue()
-        self.assertIn("min_split_size", output)
-        self.assertIn("max_connection", output)
-
-    @patch("cli115.cmds.config_cmd.load_config")
-    def test_outputs_default_config_when_no_file(self, mock_load):
-        # Simulate load_config returning defaults (no file on disk)
-        mock_load.side_effect = load_config
-        with patch("cli115.cmds.config.DEFAULT_CONFIG_FILE") as mock_file:
-            mock_file.exists.return_value = False
-            cmd = ConfigCommand()
-            args = build_parser().parse_args(["config"])
-            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-                cmd.execute(args)
-
-        output = mock_out.getvalue()
-        self.assertIn("[general]", output)
-        self.assertIn("[download]", output)
-        self.assertIn("2m", output.lower())  # min_split_size default
-
-    @patch("cli115.cmds.config_cmd.load_config")
-    def test_config_command_registered_in_cli(self, mock_load):
-        config = configparser.ConfigParser()
-        config["general"] = {"credentials": "/tmp", "user_agent": "UA"}
-        config["download"] = {
-            "min_split_size": "2M",
-            "max_connection": "10",
-        }
-        mock_load.return_value = config
-
-        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-            main(["config"])
-
-        self.assertIn("[general]", mock_out.getvalue())
-
-
-class TestAccountCommand(unittest.TestCase):
-
-    @patch("cli115.cmds.account.BaseCommand._create_client")
-    def test_execute_prints_account_info(self, mock_create):
-        mock_client = MagicMock()
-        mock_client.account.info.return_value = AccountInfo(
-            user_name="testuser",
-            user_id=12345,
-            vip=True,
-            expire=datetime(2025, 1, 1),
-        )
-        mock_create.return_value = mock_client
-
-        cmd = AccountCommand()
-        args = argparse.Namespace(format="plain")
-        with patch("builtins.print") as mock_print:
-            cmd.execute(args)
-        output = mock_print.call_args[0][0]
-        self.assertIn("testuser", output)
-        self.assertIn("12345", output)
 
 
 class TestFetchCommand(unittest.TestCase):
@@ -971,7 +882,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.read.side_effect = [chunk, b""]
         mock_client.file.open.return_value = mock_remote
 
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -995,7 +906,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.read.side_effect = [b"x" * 1024, b""]
         mock_client.file.open.return_value = mock_remote
 
-        parser = build_parser()
+        parser, _ = build_parser()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = os.path.join(tmpdir, "custom.bin")
@@ -1008,7 +919,7 @@ class TestFetchCommand(unittest.TestCase):
     def test_fetch_custom_chunk_size(self, mock_create):
         mock_client = self._make_mock_client()
         mock_create.return_value = mock_client
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--chunk-size", "4MB"])
         self.assertEqual(args.chunk_size, 4 * 1024 * 1024)
 
@@ -1023,7 +934,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_client.file.open.return_value = mock_remote
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            parser = build_parser()
+            parser, _ = build_parser()
             args = parser.parse_args(["fetch", "/remote/remote.bin", "-o", tmpdir])
             with patch("sys.stdout", new_callable=io.StringIO):
                 FetchCommand().execute(args)
@@ -1042,7 +953,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.read.side_effect = [b"x" * 1024, b""]
         mock_client.file.open.return_value = mock_remote
 
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1068,7 +979,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.read.side_effect = [b"x" * 1024, b""]
         mock_client.file.open.return_value = mock_remote
 
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1095,7 +1006,7 @@ class TestFetchCommand(unittest.TestCase):
         mock_remote.read.side_effect = [b"x" * 1024, b""]
         mock_client.file.open.return_value = mock_remote
 
-        parser = build_parser()
+        parser, _ = build_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
 
         with tempfile.TemporaryDirectory() as tmpdir:

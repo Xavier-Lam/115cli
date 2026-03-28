@@ -24,7 +24,7 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 
 ```bash
 # Authenticate with cookies
-115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 
 # Account info
 115cli account

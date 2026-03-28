@@ -24,7 +24,7 @@ pip install 115cli
 
 ```bash
 # 使用 cookie 登录
-115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 
 # 账户信息
 115cli account

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from http.cookies import SimpleCookie
 import re
 from typing import BinaryIO
 
@@ -12,6 +13,12 @@ def normalize_path(path: str) -> str:
     if not path.startswith("/"):
         path = "/" + path
     return path.rstrip("/")
+
+
+def parse_cookie_string(cookie_str: str) -> dict[str, str]:
+    sc = SimpleCookie()
+    sc.load(cookie_str)
+    return {key: morsel.value for key, morsel in sc.items()}
 
 
 _SIZE_UNITS: dict[str, int] = {

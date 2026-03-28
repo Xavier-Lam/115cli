@@ -6,7 +6,6 @@ import argparse
 import shlex
 
 from cli115.cmds.base import BaseCommand
-from cli115.cmds.config import load_config
 from cli115.cmds.formatter import PairFormatter, PairFormatterMixin
 
 
@@ -15,17 +14,14 @@ class Aria2cFormatter(PairFormatter):
 
     def __init__(
         self,
-        check_integrity: bool = False,
-        min_split_size: str | None = None,
-        max_connection: int | None = None,
+        *,
+        check_integrity,
+        max_connection,
+        min_split_size,
     ):
-        config = load_config()
-        download = config["download"]
-        self._min_split_size = min_split_size or download["min_split_size"]
-        self._max_connection = (
-            str(max_connection) if max_connection else download["max_connection"]
-        )
         self._check_integrity = check_integrity
+        self._max_connection = max_connection
+        self._min_split_size = min_split_size
 
     def format(self, pairs: list[tuple[str, object]]) -> str:
         d = dict(pairs)
@@ -100,9 +96,10 @@ class UrlCommand(PairFormatterMixin, BaseCommand):
 
     def get_formatter(self, name, args):
         if name == "aria2c":
+            download = self.cfg["download"]
             return Aria2cFormatter(
                 check_integrity=args.check_integrity,
-                min_split_size=args.min_split_size,
-                max_connection=args.max_connections,
+                min_split_size=args.min_split_size or download["min_split_size"],
+                max_connection=args.max_connections or download["max_connection"],
             )
         return super().get_formatter(name, args)

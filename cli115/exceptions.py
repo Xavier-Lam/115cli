@@ -53,3 +53,9 @@ class WAFBlockedError(APIError):
 class InstantUploadNotAvailableError(APIError):
     """Raised when instant upload is requested but the file is not available
     on the server (i.e. the file has never been uploaded before)."""
+
+
+class CommandError(Exception):
+    """Friendly error message for CLI command failures."""
+
+    pass
