@@ -584,7 +584,7 @@ class TestUrlCommand:
         mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = build_parser(cfg, CredentialManager(cfg))
         args = parser.parse_args(["url", "--format", "aria2c", "/test.bin"])
         cmds["url"].execute(args)
 
@@ -608,7 +608,7 @@ class TestUrlCommand:
         mock_client.file.url.return_value = _make_url()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = build_parser(cfg, CredentialManager(cfg))
         args = parser.parse_args(
             ["url", "--format", "aria2c", "--check-integrity", "/test.bin"]
         )

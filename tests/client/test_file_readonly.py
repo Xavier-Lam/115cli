@@ -160,7 +160,7 @@ class TestFind:
         find_sub_dir = api_client.file.create_directory(f"{find_dir.path}/subfolder")
         find_sub_file = upload_file(api_client, find_sub_dir.path, fname="sub.bin")
         # Give the server a moment to index the new content
-        time.sleep(1.5)
+        time.sleep(2)
         api_client.register_entry(find_dir)
         api_client.register_entry(find_sub_dir)
         api_client.register_entry(find_sub_file)
