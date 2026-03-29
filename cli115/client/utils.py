@@ -2,34 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime
-from typing import BinaryIO
 
-from cli115.client.base import Directory, File
-from cli115.exceptions import (
-    APIError,
-    AlreadyExistsError,
-    NotFoundError,
-)
-
-
-def check_response(resp: dict) -> dict:
-    state = resp.get("state")
-    if state is True or state == 1:
-        return resp
-    errno = resp.get("errno") or resp.get("errNo") or resp.get("code") or 0
-    message = (
-        resp.get("error")
-        or resp.get("message")
-        or resp.get("msg")
-        or "Unknown API error"
-    )
-    if errno == 990002 or errno == 20018:
-        raise NotFoundError(message, errno=errno)
-    if errno == 20004:
-        raise AlreadyExistsError(message, errno=errno)
-    raise APIError(message, errno=errno)
+from cli115.client.models import Directory, File
 
 
 def parse_ts(value) -> datetime | None:
@@ -90,31 +65,3 @@ def parse_item(item: dict) -> Directory | File:
         )
         klass = Directory
     return klass(**kwargs)
-
-
-def normalize_path(path: str) -> str:
-    path = path.replace("\\", "/").strip()
-    if not path or path == "/":
-        return "/"
-    if not path.startswith("/"):
-        path = "/" + path
-    return path.rstrip("/")
-
-
-_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB
-
-
-def sha1_file(file: BinaryIO) -> tuple[str, int]:
-    file.seek(0)
-    try:
-        h = hashlib.sha1()
-        size = 0
-        while True:
-            chunk = file.read(_CHUNK_SIZE)
-            if not chunk:
-                break
-            h.update(chunk)
-            size += len(chunk)
-        return h.hexdigest().upper(), size
-    finally:
-        file.seek(0)

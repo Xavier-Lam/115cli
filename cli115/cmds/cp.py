@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from cli115.cmds.base import BaseCommand
+from cli115.exceptions import CommandLineError
 
 
 class CpCommand(BaseCommand):
@@ -18,11 +18,7 @@ class CpCommand(BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         if len(args.paths) < 2:
-            print(
-                "Error: cp requires at least a source and destination path.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise CommandLineError("cp requires at least a source and destination path")
 
         *src_paths, dst_path = args.paths
         client = self._create_client()

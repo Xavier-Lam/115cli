@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
-from cli115.cmds.base import BaseCommand
+from cli115.client import File, FileSystemEntry
+from cli115.cmds.base import PaginationCommand
 from cli115.cmds.formatter import ListFormatterMixin, format_size
-from cli115.client.base import DEFAULT_PAGE_SIZE, File, FileSystemEntry
 
 
 def _find_record(entry: FileSystemEntry) -> list[tuple[str, object]]:
@@ -30,7 +29,7 @@ def _find_record(entry: FileSystemEntry) -> list[tuple[str, object]]:
     ]
 
 
-class FindCommand(ListFormatterMixin, BaseCommand):
+class FindCommand(ListFormatterMixin, PaginationCommand):
     """Search for files and directories."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
@@ -42,32 +41,15 @@ class FindCommand(ListFormatterMixin, BaseCommand):
             help="Directory to search within (default: global search)",
         )
         parser.add_argument("keyword", help="Search keyword")
-        parser.add_argument(
-            "--offset", type=int, default=None, help="Pagination offset"
-        )
-        parser.add_argument(
-            "--limit", type=int, default=None, help="Number of entries per page"
-        )
 
     def execute(self, args: argparse.Namespace) -> None:
-        user_specified_pagination = args.offset is not None or args.limit is not None
-        offset = args.offset if args.offset is not None else 0
-        limit = args.limit if args.limit is not None else DEFAULT_PAGE_SIZE
-
         client = self._create_client()
-        entries, pagination = client.file.find(
+        collection = client.file.find(
             args.keyword,
             path=args.path,
-            limit=limit,
-            offset=offset,
         )
+
+        entries = self.apply_pagination(collection, args)
 
         records = [_find_record(e) for e in entries]
         self.output(records, args)
-
-        if not user_specified_pagination and pagination.total > DEFAULT_PAGE_SIZE:
-            print(
-                f"Warning: {pagination.total} items total, showing first "
-                f"{len(entries)}. Use --offset and --limit to paginate.",
-                file=sys.stderr,
-            )

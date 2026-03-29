@@ -1,136 +1,63 @@
-"""Default client implementation backed by p115client."""
+"""WebAPI client implementation backed by p115client."""
 
 from __future__ import annotations
 
 import os
 import warnings
 from datetime import datetime
-from os import PathLike
-from property import locked_cacheproperty
 from typing import BinaryIO, Callable
 
-from httpcore_request import HTTPStatusError
-from p115client import P115Client
-
-from cli115.auth.base import Auth
+from cli115.api.web.p115client import check_response, P115Client
+from cli115.auth import Auth
 from cli115.client.base import (
     AccountClient,
-    AccountInfo,
     Client,
-    CloudTask,
     DEFAULT_PAGE_SIZE,
-    DEFAULT_USER_AGENT,
-    Directory,
     DownloadClient,
-    DownloadInfo,
-    DownloadQuota,
-    File,
     FileClient,
-    FileSystemEntry,
     MAX_PAGE_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
-    new_lazy_cls,
+    RemoteFile,
+)
+from cli115.client.lazy import new_lazy_cls
+from cli115.client.models import (
+    AccountInfo,
+    CloudTask,
+    Directory,
+    DownloadUrl,
+    DownloadQuota,
+    File,
+    FileSystemEntry,
     Pagination,
     Progress,
     SortField,
     SortOrder,
     TaskStatus,
 )
-from cli115.client.utils import (
-    check_response,
-    normalize_path,
-    parse_item,
-    parse_ts,
-    sha1_file,
-)
-from cli115.exceptions import (
-    AlreadyExistsError,
-    DirectoryNotEmptyError,
-    InstantUploadNotAvailableError,
-    NotFoundError,
-    WAFBlockedError,
+from cli115.client.utils import parse_item, parse_ts
+from cli115.exceptions import InstantUploadNotAvailableError
+from cli115.helpers import normalize_path, sha1_file, join_path
+
+
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
 )
 
 
-class _115Client(P115Client):
+class WebAPIClient(Client):
+    """High-level 115 client backed by the web API.
+
+    Although it is named ``WebAPIClient``, a few of its APIs may come from
+    other sources, such as the mobile phone app.
     """
-    A wrapper around P115Client to add WAF block detection and userkey correction.
-    """
-
-    def request(
-        self,
-        /,
-        url,
-        method="GET",
-        payload=None,
-        *,
-        ecdh_encrypt=False,
-        request=None,
-        async_=False,
-        **request_kwargs,
-    ):
-        try:
-            return super().request(
-                url,
-                method,
-                payload,
-                ecdh_encrypt=ecdh_encrypt,
-                request=request,
-                async_=async_,
-                **request_kwargs,
-            )
-        except HTTPStatusError as exc:
-            if self._is_waf_blocked(exc):
-                raise WAFBlockedError(
-                    "Request blocked by Aliyun WAF; try again later"
-                ) from exc
-            raise
-
-    @locked_cacheproperty
-    def user_key(self) -> str:
-        # fetch userkey via /app/uploadinfo (works with web cookies) to avoid
-        # the default /android/2.0/user/upload_key endpoint which requires
-        # app-specific cookies (errno 99).
-        resp = self.upload_info()
-        check_response(resp)
-        return resp["userkey"]
-
-    @staticmethod
-    def _is_waf_blocked(exc: HTTPStatusError) -> bool:
-        """Return True if the error is an Aliyun WAF block (HTTP 405 with WAF body)."""
-        if exc.code != 405 or exc.headers["Content-Type"] != "text/html":
-            return False
-        body_text = exc.response_body.decode("utf-8", errors="replace")
-        return "aliyun.com" in body_text or "alicdn.com" in body_text
-
-
-class DefaultAccountClient(AccountClient):
-
-    def __init__(self, client: DefaultClient):
-        self._client = client
-
-    def info(self) -> AccountInfo:
-        resp = self._client._api.user_my()
-        check_response(resp)
-        data = resp.get("data", {})
-        expire_ts = data.get("expire")
-        expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
-        return AccountInfo(
-            user_name=data.get("user_name", ""),
-            user_id=int(data.get("user_id", 0)),
-            vip=bool(data.get("vip", 0)),
-            expire=expire,
-        )
-
-
-class DefaultClient(Client):
 
     def __init__(self, auth: Auth):
         self._auth = auth
-        self._api = _115Client(auth.get_cookies())
-        self._account = DefaultAccountClient(self)
-        self._file = DefaultFileClient(self)
-        self._download = DefaultDownloadClient(self)
+        self._api = P115Client(auth.get_cookies())
+        self._account = WebAPIAccountClient(self)
+        self._file = WebAPIFileClient(self)
+        self._download = WebAPIDownloadClient(self)
 
     @property
     def account(self) -> AccountClient:
@@ -155,13 +82,32 @@ class DefaultClient(Client):
         dir_id = str(resp["id"])
         if dir_id == "0":
             # the api returns success with id=0 for non-existent paths
-            raise NotFoundError("directory not found: %s" % path, errno=990002)
+            raise FileNotFoundError("directory not found: %s" % path)
         return dir_id
 
 
-class DefaultFileClient(FileClient):
+class WebAPIAccountClient(AccountClient):
 
-    def __init__(self, client: DefaultClient):
+    def __init__(self, client: WebAPIClient):
+        self._client = client
+
+    def info(self) -> AccountInfo:
+        resp = self._client._api.user_my()
+        check_response(resp)
+        data = resp.get("data", {})
+        expire_ts = data.get("expire")
+        expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
+        return AccountInfo(
+            user_name=data.get("user_name", ""),
+            user_id=int(data.get("user_id", 0)),
+            vip=bool(data.get("vip", 0)),
+            expire=expire,
+        )
+
+
+class WebAPIFileClient(FileClient):
+
+    def __init__(self, client: WebAPIClient):
         self._client = client
 
     # -- public API --
@@ -171,14 +117,14 @@ class DefaultFileClient(FileClient):
         resp = check_response(resp)
         data = resp.get("data", [])
         if not data:
-            raise NotFoundError(f"Not found: {file_id}", errno=990002)
+            raise FileNotFoundError(f"file id not found: {file_id}")
         item = parse_item(data[0])
         return new_lazy_cls(item, self)
 
-    def info(self, path: str) -> Directory | File:
+    def stat(self, path: str) -> Directory | File:
         return self._resolve_entry(path)
 
-    def list(
+    def _list(
         self,
         path: str | Directory = "/",
         *,
@@ -220,7 +166,7 @@ class DefaultFileClient(FileClient):
         for raw in resp.get("data", []):
             item = parse_item(raw)
             if path is not None:
-                item.path = f"{path.rstrip('/')}/{item.name}"
+                item.path = join_path(path, item.name)
             items.append(item)
 
         pagination = Pagination(
@@ -230,7 +176,7 @@ class DefaultFileClient(FileClient):
         )
         return items, pagination
 
-    def find(
+    def _find(
         self,
         query: str,
         *,
@@ -268,14 +214,19 @@ class DefaultFileClient(FileClient):
 
         try:
             pid = self._client._resolve_dir_id(dirname)
-        except NotFoundError:
+        except FileNotFoundError:
             if not parents:
                 raise
             parent_dir = self.create_directory(dirname, parents=True)
             pid = parent_dir.id
 
-        resp = self._client._api.fs_mkdir(name, pid=pid)
-        resp = check_response(resp)
+        try:
+            resp = self._client._api.fs_mkdir(name, pid=pid)
+            resp = check_response(resp)
+        except FileExistsError:
+            if parents:
+                return self.stat(path)  # directory already exists, return it
+            raise
         return Directory(
             id=str(resp.get("cid") or resp.get("file_id", "")),
             parent_id=pid,
@@ -287,44 +238,74 @@ class DefaultFileClient(FileClient):
             open_time=None,
         )
 
-    def upload(
-        self,
-        path: str,
-        file: str | PathLike[str] | BinaryIO,
-        *,
-        instant_only: bool = False,
-        progress_callback: Callable[[Progress], object] | None = None,
-    ) -> File:
+    def delete(self, path: str | FileSystemEntry, *, recursive: bool = False) -> None:
+        entry = self.stat(path)
+        if not recursive and entry.is_directory:
+            items = self.list(path)
+            if len(items) > 0:
+                raise FileExistsError(f"directory is not empty: {path}")
+        resp = self._client._api.fs_delete(entry.id)
+        check_response(resp)
 
-        opened = None
-        if isinstance(file, (str, PathLike)):
-            opened = open(file, "rb")
-            file = opened
-        try:
-            return self._upload(
-                path,
-                file,
-                instant_only=instant_only,
-            )
-        finally:
-            if opened is not None:
-                opened.close()
+    def batch_delete(
+        self, *paths: str | FileSystemEntry, recursive: bool = False
+    ) -> None:
+        if recursive:
+            raise NotImplementedError("recursive batch delete is not yet supported")
+        ids = [self._resolve_id(p) for p in paths]
+        resp = self._client._api.fs_delete(ids)
+        check_response(resp)
+
+    def rename(self, path: str | FileSystemEntry, name: str) -> None:
+        file_id = self._resolve_id(path)
+        resp = self._client._api.fs_rename((file_id, name))
+        check_response(resp)
+
+    def move(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
+        src_id = self._resolve_id(src)
+        dest_id = self._client._resolve_dir_id(dest_dir)
+        resp = self._client._api.fs_move(src_id, pid=dest_id)
+        check_response(resp)
+
+    def batch_move(
+        self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
+    ) -> None:
+        src_ids = [self._resolve_id(s) for s in srcs]
+        dest_id = self._client._resolve_dir_id(dest_dir)
+        resp = self._client._api.fs_move(src_ids, pid=dest_id)
+        check_response(resp)
+
+    def copy(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
+        src_id = self._resolve_id(src)
+        dest_id = self._client._resolve_dir_id(dest_dir)
+        resp = self._client._api.fs_copy(src_id, pid=dest_id)
+        check_response(resp)
+
+    def batch_copy(
+        self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
+    ) -> None:
+        src_ids = [self._resolve_id(s) for s in srcs]
+        dest_id = self._client._resolve_dir_id(dest_dir)
+        resp = self._client._api.fs_copy(src_ids, pid=dest_id)
+        check_response(resp)
 
     def _upload(
         self,
         path: str,
         file: BinaryIO,
-        instant_only: bool,
+        *,
+        instant_only: int | None = None,
+        progress_callback: Callable[[Progress], object] | None = None,
     ) -> File:
         path = normalize_path(path)
 
         # raise an error if the file already exists
         try:
-            self.info(path)
-        except NotFoundError:
+            self.stat(path)
+        except FileNotFoundError:
             pass
         else:
-            raise AlreadyExistsError(f"File already exists: {path}", errno=0)
+            raise FileExistsError(f"remote path '{path}' already exists")
 
         parent_path = os.path.dirname(path)
         filename = os.path.basename(path)
@@ -334,6 +315,7 @@ class DefaultFileClient(FileClient):
 
         # Only attempt instant upload when the file meets the minimum size.
         if file_size >= MIN_INSTANT_UPLOAD_SIZE:
+            force_instant = instant_only is not None and file_size >= instant_only
             try:
                 success = self._try_instant_upload(
                     file=file,
@@ -344,22 +326,24 @@ class DefaultFileClient(FileClient):
                     path=path,
                 )
             except Exception as exc:
-                if instant_only:
+                if force_instant:
                     raise
                 warnings.warn(
-                    f"Instant upload failed ({exc}); falling back to " "normal upload",
+                    f"instant upload failed ({exc}); falling back to normal upload",
                     stacklevel=2,
                 )
             else:
                 if success:
-                    return self.info(path)
-                if instant_only:
+                    return self.stat(path)
+                if force_instant:
                     raise InstantUploadNotAvailableError(
-                        "Instant upload is not available for this file "
-                        "(file not found on server)",
-                        errno=0,
+                        "instant upload is not available for this file "
+                        "(file not found on server)"
                     )
             file.seek(0)
+
+        if isinstance(file, RemoteFile):
+            file.set_stream(True)  # use streaming upload for RemoteFile
 
         resp = self._client._api.upload_file_sample(
             file,
@@ -411,71 +395,17 @@ class DefaultFileClient(FileClient):
 
         return bool(resp.get("reuse"))
 
-    def delete(self, path: str | FileSystemEntry, *, recursive: bool = False) -> None:
-        entry = self._resolve_entry(path)
-        if not recursive and entry.is_directory:
-            _, pagination = self.list(path, limit=1)
-            if pagination.total > 0:
-                raise DirectoryNotEmptyError(f"Directory is not empty: {path}")
-        resp = self._client._api.fs_delete(entry.id)
-        check_response(resp)
-
-    def batch_delete(
-        self, *paths: str | FileSystemEntry, recursive: bool = False
-    ) -> None:
-        if recursive:
-            raise NotImplementedError("recursive batch delete is not yet supported")
-        ids = [self._resolve_id(p) for p in paths]
-        resp = self._client._api.fs_delete(ids)
-        check_response(resp)
-
-    def rename(self, path: str | FileSystemEntry, name: str) -> None:
-        file_id = self._resolve_id(path)
-        resp = self._client._api.fs_rename((file_id, name))
-        check_response(resp)
-
-    def move(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
-        src_id = self._resolve_id(src)
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_move(src_id, pid=dest_id)
-        check_response(resp)
-
-    def batch_move(
-        self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
-    ) -> None:
-        src_ids = [self._resolve_id(s) for s in srcs]
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_move(src_ids, pid=dest_id)
-        check_response(resp)
-
-    def copy(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
-        src_id = self._resolve_id(src)
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_copy(src_id, pid=dest_id)
-        check_response(resp)
-
-    def batch_copy(
-        self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
-    ) -> None:
-        src_ids = [self._resolve_id(s) for s in srcs]
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_copy(src_ids, pid=dest_id)
-        check_response(resp)
-
-    def download_info(
-        self, path: str | File, *, user_agent: str | None = None
-    ) -> DownloadInfo:
+    def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)
         if entry.is_directory:
-            raise ValueError("Cannot get download info for a directory")
-        assert isinstance(entry, File)
+            raise IsADirectoryError("cannot get download info for a directory")
 
         ua = user_agent or DEFAULT_USER_AGENT
         p115url = self._client._api.download_url(entry.pickcode, user_agent=ua)
         cookie_str = "; ".join(
             f"{k}={m.value}" for k, m in self._client._api.cookies.items()
         )
-        return DownloadInfo(
+        return DownloadUrl(
             url=str(p115url),
             file_name=entry.name,
             file_size=entry.size,
@@ -532,28 +462,12 @@ class DefaultFileClient(FileClient):
             offset += len(data)
             if offset >= total or not data:
                 break
-        raise NotFoundError(f"Not found: {path}", errno=990002)
+        raise FileNotFoundError(f"entry not found: {path}")
 
 
-def _parse_task(task: dict) -> CloudTask:
-    """Convert a raw task dict from the API into a CloudTask."""
-    return CloudTask(
-        info_hash=task.get("info_hash", ""),
-        name=task.get("name", ""),
-        size=int(task.get("size", 0)),
-        status=TaskStatus(int(task.get("status", 0))),
-        percent_done=float(task.get("percentDone", 0)),
-        url=task.get("url", ""),
-        file_id=str(task.get("file_id", "") or ""),
-        pick_code=task.get("pick_code", "") or "",
-        folder_id=str(task.get("wp_path_id", "") or ""),
-        add_time=parse_ts(task.get("add_time")),
-    )
+class WebAPIDownloadClient(DownloadClient):
 
-
-class DefaultDownloadClient(DownloadClient):
-
-    def __init__(self, client: DefaultClient):
+    def __init__(self, client: WebAPIClient):
         self._client = client
 
     def quota(self) -> DownloadQuota:
@@ -564,14 +478,17 @@ class DefaultDownloadClient(DownloadClient):
             total=int(resp.get("total", 0)),
         )
 
-    def list(self, page: int = 1) -> tuple[list[CloudTask], Pagination]:
+    def _list(
+        self, page: int = 1, page_size: int = 30
+    ) -> tuple[list[CloudTask], Pagination]:
         resp = self._client._api.offline_list({"page": page})
         resp = check_response(resp)
-        tasks = [_parse_task(t) for t in resp.get("tasks", [])]
+        tasks = [self._parse_task(t) for t in resp.get("tasks", [])]
+        page_size = int(resp.get("page_row", resp.get("page_size", page_size)))
         pagination = Pagination(
             total=int(resp.get("count", 0)),
-            offset=(int(resp.get("page", 1)) - 1) * int(resp.get("page_row", 30)),
-            limit=int(resp.get("page_row", 30)),
+            offset=(int(resp.get("page", 1)) - 1) * page_size,
+            limit=page_size,
         )
         return tasks, pagination
 
@@ -625,5 +542,20 @@ class DefaultDownloadClient(DownloadClient):
 
     def _fetch_tasks_map(self) -> dict[str, CloudTask]:
         """Fetch the first page of tasks and return a dict keyed by info_hash."""
-        tasks, _ = self.list(page=1)
+        tasks, _ = self._list(page=1)
         return {t.info_hash: t for t in tasks}
+
+    def _parse_task(self, task: dict) -> CloudTask:
+        """Convert a raw task dict from the API into a CloudTask."""
+        return CloudTask(
+            info_hash=task.get("info_hash", ""),
+            name=task.get("name", ""),
+            size=int(task.get("size", 0)),
+            status=TaskStatus(int(task.get("status", 0))),
+            percent_done=float(task.get("percentDone", 0)),
+            url=task.get("url", ""),
+            file_id=str(task.get("file_id", "") or ""),
+            pick_code=task.get("pick_code", "") or "",
+            folder_id=str(task.get("wp_path_id", "") or ""),
+            add_time=parse_ts(task.get("add_time")),
+        )

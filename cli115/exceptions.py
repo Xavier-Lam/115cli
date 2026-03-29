@@ -9,38 +9,16 @@ class APIError(Exception):
 
     def __init__(self, message: str, errno: int = 0):
         self.errno = errno
-        super().__init__(f"[{errno}] {message}")
+        message = f"[{errno}] {message}" if errno else message
+        super().__init__(message)
 
 
-class AuthenticationError(APIError):
-    """Raised when authentication fails or credentials are invalid."""
+class InstantUploadNotAvailableError(Exception):
+    """Raised when instant upload is requested but the file is not available
+    on the server (i.e. the file has never been uploaded before)."""
 
 
-class SessionExpiredError(AuthenticationError):
-    """Raised when the session has expired."""
-
-
-class NotFoundError(APIError):
-    """Raised when a requested file or directory is not found."""
-
-
-class AlreadyExistsError(APIError):
-    """Raised when a resource with the same name already exists."""
-
-
-class PermissionDeniedError(APIError):
-    """Raised when the user lacks permission."""
-
-
-class InvalidParameterError(APIError):
-    """Raised when an API call receives invalid parameters."""
-
-
-class DirectoryNotEmptyError(APIError):
-    """Raised when attempting to delete a non-empty directory non-recursively."""
-
-
-class WAFBlockedError(APIError):
+class WAFBlockedError(Exception):
     """Raised when requests are blocked by Aliyun WAF.
 
     This happens when too many requests are sent in a short period of time.
@@ -49,6 +27,9 @@ class WAFBlockedError(APIError):
     """
 
 
-class InstantUploadNotAvailableError(APIError):
-    """Raised when instant upload is requested but the file is not available
-    on the server (i.e. the file has never been uploaded before)."""
+class CredentialError(Exception):
+    """Raised when credentials are missing or invalid."""
+
+
+class CommandLineError(Exception):
+    """Friendly error message for CLI command failures."""

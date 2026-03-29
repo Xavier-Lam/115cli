@@ -6,19 +6,22 @@ import argparse
 import shlex
 
 from cli115.cmds.base import BaseCommand
-from cli115.cmds.config import load_config
 from cli115.cmds.formatter import PairFormatter, PairFormatterMixin
 
 
 class Aria2cFormatter(PairFormatter):
     """Format download info as an aria2c command-line invocation."""
 
-    def __init__(self, check_integrity: bool = False):
-        config = load_config()
-        download = config["download"]
-        self._min_split_size = download["min_split_size"]
-        self._max_connection = download["max_connection"]
+    def __init__(
+        self,
+        *,
+        check_integrity,
+        max_connection,
+        min_split_size,
+    ):
         self._check_integrity = check_integrity
+        self._max_connection = max_connection
+        self._min_split_size = min_split_size
 
     def format(self, pairs: list[tuple[str, object]]) -> str:
         d = dict(pairs)
@@ -46,7 +49,7 @@ class Aria2cFormatter(PairFormatter):
         return " ".join(shlex.quote(p) for p in parts)
 
 
-class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
+class UrlCommand(PairFormatterMixin, BaseCommand):
     """Get download URL and headers for a file."""
 
     def get_formatters(self):
@@ -62,10 +65,23 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
             action="store_true",
             help="Include SHA-1 checksum in aria2c output",
         )
+        parser.add_argument(
+            "-k",
+            "--min-split-size",
+            default=None,
+            help="Min split size for aria2c (overrides config, e.g. '8M')",
+        )
+        parser.add_argument(
+            "-x",
+            "--max-connections",
+            type=int,
+            default=None,
+            help="Max connections to download the file",
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
-        info = client.file.download_info(args.path)
+        info = client.file.url(args.path)
 
         pairs = [
             ("url", info.url),
@@ -80,5 +96,10 @@ class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
 
     def get_formatter(self, name, args):
         if name == "aria2c":
-            return Aria2cFormatter(check_integrity=args.check_integrity)
+            download = self.cfg["download"]
+            return Aria2cFormatter(
+                check_integrity=args.check_integrity,
+                min_split_size=args.min_split_size or download["min_split_size"],
+                max_connection=args.max_connections or download["max_connection"],
+            )
         return super().get_formatter(name, args)

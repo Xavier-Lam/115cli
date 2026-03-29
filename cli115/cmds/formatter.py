@@ -7,7 +7,7 @@ import json
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from cli115.client.base import FileSystemEntry
+from cli115.client import FileSystemEntry
 
 
 class PairFormat(str, Enum):
@@ -154,6 +154,7 @@ class FormatterMixin(ABC):
         return formatter_cls()
 
     def register(self, parser: argparse.ArgumentParser) -> None:
+        super().register(parser)
         self.add_format_argument(parser)
 
     def add_format_argument(self, parser: argparse.ArgumentParser) -> None:

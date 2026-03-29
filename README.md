@@ -23,12 +23,17 @@ pip install 115cli
 After [authenticating](#authentication) with `115cli auth`, you can use the `115cli` command to interact with your 115 cloud storage. Here are some examples of available commands:
 
 ```bash
+# Authenticate with cookies
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+
 # Account info
 115cli account
 
 # List files
 115cli ls /
 115cli ls /path/to/dir -l
+# Sort by creation time, newest first
+115cli ls -l --sort created --desc
 
 # File operations
 115cli mkdir /new-folder
@@ -39,9 +44,9 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli find /search/path keyword
 
 # File info and download
-115cli info /path/to/file
-115cli download-info /path/to/file
-115cli download-info --format aria2c /path/to/file
+115cli stat /path/to/file
+115cli url /path/to/file
+115cli url --format aria2c /path/to/file
 
 # Download a file to local disk
 115cli fetch /path/to/file.mp4
@@ -51,6 +56,10 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli upload /local/file.txt /remote/dir/file.txt
 # Upload with instant upload only
 115cli upload --instant-only /local/file.txt /remote/dir/file.txt
+# Upload a folder
+115cli upload /local/folder/ /remote/dir/
+# Upload with include/exclude patterns
+115cli upload /local/folder/ /remote/dir/ --include "**/*.mkv" --include "**/*.mp4" --exclude "secret/*"
 
 # Cloud download (offline download)
 115cli download quota
@@ -66,7 +75,7 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli currently only supports cookie-based authentication. Obtain your cookies from the browser after logging into [115.com](https://115.com). You need the `UID`, `CID`, `SEID`, and `KID` cookie values.
 
 ```bash
-115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 ```
 
 ### Python API
@@ -86,7 +95,7 @@ auth = CookieAuth(
 client = create_client(auth)
 
 # List directory
-entries, pagination = client.file.list("/")
+entries = client.file.list("/")
 for entry in entries:
     print(entry.name, entry.id)
 
@@ -95,11 +104,11 @@ info = client.file.info("/path/to/file.txt")
 print(info.name, info.size, info.sha1)
 
 # Download info
-dl = client.file.download_info("/path/to/file.txt")
+dl = client.file.url("/path/to/file.txt")
 print(dl.url)
 
 # Fetch a remote file as a lazy file-like object
-with client.file.fetch("/path/to/file.txt") as rf:
+with client.file.open("/path/to/file.txt") as rf:
     data = rf.read(1024)   # only downloads the first 1024 bytes
 
 # Upload
@@ -107,7 +116,7 @@ result = client.file.upload("/remote/dir/", "/local/file.txt")
 
 # Cloud download
 client.download.add_url("https://example.com/file.mp4")
-tasks, _ = client.download.list()
+tasks = client.download.list()
 ```
 
 > This project is in an early stage of development, it may subject to breaking changes in the future.

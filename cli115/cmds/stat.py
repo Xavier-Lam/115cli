@@ -8,7 +8,7 @@ from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
 
 
-class InfoCommand(PairFormatterMixin, BaseCommand):
+class StatCommand(PairFormatterMixin, BaseCommand):
     """Show file or directory info."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
@@ -18,6 +18,6 @@ class InfoCommand(PairFormatterMixin, BaseCommand):
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
 
-        entry = client.file.info(args.path)
+        entry = client.file.stat(args.path)
 
         self.output(format_entry(entry), args)

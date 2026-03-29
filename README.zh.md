@@ -23,12 +23,17 @@ pip install 115cli
 常见示例:
 
 ```bash
+# 使用 cookie 登录
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+
 # 账户信息
 115cli account
 
 # 目录
 115cli ls /
 115cli ls /path/to/dir -l
+# 创建时间倒叙
+115cli ls -l --sort created --desc
 
 # 文件操作
 115cli mkdir /new-folder
@@ -39,9 +44,9 @@ pip install 115cli
 115cli find /search/path keyword
 
 # 查看文件信息和获取下载地址
-115cli info /path/to/file
-115cli download-info /path/to/file
-115cli download-info --format aria2c /path/to/file
+115cli stat /path/to/file
+115cli url /path/to/file
+115cli url --format aria2c /path/to/file
 
 # 下载
 115cli fetch /path/to/file.mp4
@@ -51,6 +56,10 @@ pip install 115cli
 115cli upload /local/file.txt /remote/dir/file.txt
 # 仅秒传
 115cli upload --instant-only /local/file.txt /remote/dir/file.txt
+# 文件夹上传
+115cli upload /local/folder/ /remote/dir/
+# 文件黑白名单
+115cli upload /local/folder/ /remote/dir/ --include "**/*.mkv" --include "**/*.mp4" --exclude "secret/*"
 
 # 离线下载
 115cli download quota
@@ -66,7 +75,7 @@ pip install 115cli
 本项目目前只支持通过浏览器拿到的 cookie 登录.登录时需要提供 `UID`, `CID`, `SEID` 和 `KID` 四个 cookie 值.
 
 ```bash
-115cli auth cookie <user_name> "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 ```
 
 ## Client API
@@ -86,7 +95,7 @@ auth = CookieAuth(
 client = create_client(auth)
 
 # 列目录
-entries, pagination = client.file.list("/")
+entries = client.file.list("/")
 for entry in entries:
 	print(entry.name, entry.id)
 
@@ -95,11 +104,11 @@ info = client.file.info("/path/to/file.txt")
 print(info.name, info.size, info.sha1)
 
 # 获取下载信息
-dl = client.file.download_info("/path/to/file.txt")
+dl = client.file.url("/path/to/file.txt")
 print(dl.url)
 
 # 下载
-with client.file.fetch("/path/to/file.txt") as rf:
+with client.file.open("/path/to/file.txt") as rf:
     data = rf.read(1024)  # 仅下载前1024字节
 
 # 上传
@@ -107,7 +116,7 @@ result = client.file.upload("/remote/dir/", "/local/file.txt")
 
 # 添加云端下载任务
 client.download.add_url("https://example.com/file.mp4")
-tasks, _ = client.download.list()
+tasks = client.download.list()
 ```
 
 ## 未来计划

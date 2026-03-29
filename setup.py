@@ -1,6 +1,5 @@
 import io
 import os
-
 from setuptools import find_packages, setup
 
 this_directory = os.path.abspath(os.path.dirname(__file__))
@@ -30,6 +29,7 @@ setup(
     install_requires=[
         "p115client>=0.0.8",
         "httpx",
+        "pathspec",
         "tqdm",
     ],
     entry_points={
@@ -39,7 +39,8 @@ setup(
     },
     extras_require={
         "dev": [
-            "coverage",
+            "pytest",
+            "pytest-cov",
         ],
     },
     classifiers=[
