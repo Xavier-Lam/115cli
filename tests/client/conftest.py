@@ -6,6 +6,7 @@ import time
 import unittest.mock
 import uuid
 from functools import cached_property
+from unittest.mock import MagicMock, patch
 
 import httpcore
 import httpcore_request
@@ -13,12 +14,51 @@ import pytest
 
 from cli115.api.web import p115client
 from cli115.auth import CookieAuth
-from cli115.client import Client, Directory, File, create_client
-from cli115.exceptions import AlreadyExistsError
+from cli115.client import Client, Directory, File, create_client, webapi
 from cli115.helpers import normalize_path, parse_cookie_string
 
 
 TEST_ROOT = "/115cli_test"
+
+
+def make_client():
+    """Create a WebAPIClient with a fully mocked P115 API backend."""
+    with patch("cli115.client.webapi.P115Client"):
+        client = webapi.WebAPIClient(MagicMock())
+    client._api = MagicMock()
+    return client
+
+
+def make_dir(name="dir", id="100", parent_id="0", path=None, file_count=0):
+    return Directory(
+        id=id,
+        parent_id=parent_id,
+        name=name,
+        path=path if path is not None else f"/{name}",
+        pickcode="",
+        created_time=None,
+        modified_time=None,
+        open_time=None,
+        file_count=file_count,
+    )
+
+
+def make_file(
+    name="file.txt", id="200", parent_id="0", path=None, size=1024, sha1="ABC123"
+):
+    return File(
+        id=id,
+        parent_id=parent_id,
+        name=name,
+        path=path if path is not None else f"/{name}",
+        pickcode="",
+        created_time=None,
+        modified_time=None,
+        open_time=None,
+        size=size,
+        sha1=sha1,
+        file_type="txt",
+    )
 
 
 class _LogCapture(logging.Handler):
@@ -222,7 +262,7 @@ def api_client():
 def root_dir(api_client):
     try:
         root = api_client.file.create_directory(TEST_ROOT)
-    except AlreadyExistsError:
+    except FileExistsError:
         root = api_client.file.stat(TEST_ROOT)
 
     api_client.register_entry(root)

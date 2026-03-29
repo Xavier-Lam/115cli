@@ -102,7 +102,7 @@ class TestMainEntryPoint:
                 main(["ls", "/"])
 
         assert exc_info.value.code == 1
-        assert "Error: No active user" in capsys.readouterr().err
+        assert "Error: no active user" in capsys.readouterr().err
 
 
 class TestPaginationCommand:

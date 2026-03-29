@@ -4,12 +4,7 @@ from property import locked_cacheproperty
 from httpcore_request import HTTPStatusError
 from p115client import P115Client as BaseP115Client
 
-from cli115.exceptions import (
-    APIError,
-    AlreadyExistsError,
-    NotFoundError,
-    WAFBlockedError,
-)
+from cli115.exceptions import APIError, WAFBlockedError
 
 
 logger = logging.getLogger(__name__)
@@ -54,7 +49,7 @@ class P115Client(BaseP115Client):
         except HTTPStatusError as exc:
             if self._is_waf_blocked(exc):
                 raise WAFBlockedError(
-                    "Request blocked by Aliyun WAF; try again later"
+                    "request blocked by Aliyun WAF; try again later"
                 ) from exc
             raise
 
@@ -89,8 +84,11 @@ def check_response(resp: dict) -> dict:
         or resp.get("msg")
         or "Unknown API error"
     )
-    if errno == 990002 or errno == 20018:
-        raise NotFoundError(message, errno=errno)
-    if errno == 20004:
-        raise AlreadyExistsError(message, errno=errno)
-    raise APIError(message, errno=errno)
+    try:
+        raise APIError(message, errno=errno)
+    except APIError as exc:
+        if errno == 990002 or errno == 20018:
+            raise FileNotFoundError(exc) from exc
+        if errno == 20004:
+            raise FileExistsError(exc) from exc
+        raise

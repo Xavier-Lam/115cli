@@ -193,7 +193,7 @@ class TestFetchCommand:
             orig_dir = os.getcwd()
             os.chdir(tmpdir)
             try:
-                with pytest.raises(CommandLineError, match="Size mismatch"):
+                with pytest.raises(CommandLineError, match="size mismatch"):
                     cmds["fetch"].execute(args)
             finally:
                 os.chdir(orig_dir)
@@ -206,7 +206,7 @@ class TestFetchCommand:
             orig_dir = os.getcwd()
             os.chdir(tmpdir)
             try:
-                with pytest.raises(CommandLineError, match="SHA1 mismatch"):
+                with pytest.raises(CommandLineError, match="sha1 mismatch"):
                     cmds["fetch"].execute(args)
             finally:
                 os.chdir(orig_dir)
@@ -488,7 +488,12 @@ class TestUploadCommand:
         cmds["upload"].execute(args)
 
         mock_upload.assert_called_once_with(
-            mock_client, "/local/file.txt", "/remote/file.txt", instant_only=False
+            mock_client,
+            "/local/file.txt",
+            "/remote/file.txt",
+            instant_only=None,
+            include=None,
+            exclude=None,
         )
 
     @patch("cli115.cmds.upload.upload")
@@ -508,6 +513,66 @@ class TestUploadCommand:
         assert data["Name"] == "uploaded.txt"
         assert data["SHA1"] == "abc123"
         assert data["Size"] == 2048
+
+    @patch("cli115.cmds.upload.upload")
+    @patch.object(UploadCommand, "_create_client")
+    def test_instant_only_passes_threshold(self, mock_create, mock_upload):
+        mock_create.return_value = MagicMock()
+        mock_upload.return_value = _make_file()
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            [
+                "upload",
+                "--instant-only",
+                "100MB",
+                "/local/file.txt",
+                "/remote/file.txt",
+            ]
+        )
+        cmds["upload"].execute(args)
+
+        call_kwargs = mock_upload.call_args.kwargs
+        assert call_kwargs["instant_only"] == 100 * 1024 * 1024
+
+    @patch("cli115.cmds.upload.upload")
+    @patch.object(UploadCommand, "_create_client")
+    def test_include_and_exclude_patterns_passed(self, mock_create, mock_upload):
+        mock_create.return_value = MagicMock()
+        mock_upload.return_value = _make_file()
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            [
+                "upload",
+                "--include",
+                "src/**",
+                "--exclude",
+                "**/*.log",
+                "--exclude",
+                "temp/**",
+                "/local/dir",
+                "/remote/dir",
+            ]
+        )
+        cmds["upload"].execute(args)
+
+        call_kwargs = mock_upload.call_args.kwargs
+        assert call_kwargs["include"] == ["src/**"]
+        assert call_kwargs["exclude"] == ["**/*.log", "temp/**"]
+
+    @patch("cli115.cmds.upload.upload")
+    @patch.object(UploadCommand, "_create_client")
+    def test_upload_dir_to_file_raises_command_error(self, mock_create, mock_upload):
+        mock_create.return_value = MagicMock()
+        mock_upload.side_effect = FileExistsError(
+            "cannot upload directory to a file path"
+        )
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["upload", "/local/dir", "/remote/file.txt"])
+        with pytest.raises(FileExistsError, match="cannot upload directory"):
+            cmds["upload"].execute(args)
 
 
 class TestUrlCommand:

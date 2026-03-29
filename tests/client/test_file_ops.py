@@ -1,9 +1,9 @@
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 
-from cli115.exceptions import AlreadyExistsError
-from tests.client.conftest import upload_file
+from tests.client.conftest import make_client, make_dir, upload_file
 
 
 class TestCreateDirectory:
@@ -20,10 +20,6 @@ class TestCreateDirectory:
         names = {item.name for item in items}
         assert name in names
 
-    def test_create_existing_directory_raises(self, api_client, shared):
-        with pytest.raises(AlreadyExistsError):
-            api_client.file.create_directory(shared.dir_a.path)
-
     def test_create_directory_with_nonexistent_parent(self, api_client, root_dir):
         parent_name = "cdir_np"
         child_name = "child"
@@ -34,6 +30,32 @@ class TestCreateDirectory:
         items = api_client.file.list(f"{root_dir.path}/{parent_name}")
         assert len(items) == 1
         assert items[0].name == child_name
+
+    def test_create_existing_directory_raises(self):
+        client = make_client()
+        client._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
+        client._api.fs_mkdir.return_value = {
+            "state": False,
+            "errno": 20004,
+            "error": "directory already exists",
+        }
+        with pytest.raises(FileExistsError):
+            client.file.create_directory("/parent/existing")
+
+    def test_create_existing_directory_succeeds_with_parents(self):
+        # When parents=True, an already-existing target directory is returned
+        # via stat rather than raising FileExistsError.
+        client = make_client()
+        existing = make_dir(name="existing", id="999", path="/parent/existing")
+        client._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
+        client._api.fs_mkdir.return_value = {
+            "state": False,
+            "errno": 20004,
+            "error": "directory already exists",
+        }
+        client.file.stat = MagicMock(return_value=existing)
+        result = client.file.create_directory("/parent/existing", parents=True)
+        assert result is existing
 
 
 class TestDelete:
@@ -79,13 +101,19 @@ class TestDelete:
         dir_path = f"{root_dir.path}/{name}"
         directory = api_client.file.create_directory(dir_path)
         api_client.file.create_directory(f"{dir_path}/inner")
-        with pytest.raises(AlreadyExistsError):
+        with pytest.raises(FileExistsError):
             api_client.file.delete(dir_path, recursive=False)
 
         api_client.file.delete(dir_path, recursive=True)
         items = api_client.file.list(root_dir)
         assert directory.id not in {item.id for item in items}
         assert name not in {i.name for i in items}
+
+    def test_delete_nonexistent(self):
+        client = make_client()
+        client.file.stat = MagicMock(side_effect=FileNotFoundError("not found"))
+        with pytest.raises(FileNotFoundError):
+            client.file.delete("/nonexistent")
 
 
 class TestMove:

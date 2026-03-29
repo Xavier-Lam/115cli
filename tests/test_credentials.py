@@ -4,7 +4,7 @@ import json
 import pytest
 
 from cli115.credentials import CredentialManager, CredType, CURRENT_CREDENTIAL_FILE
-from cli115.exceptions import CommandLineError
+from cli115.exceptions import CredentialError
 
 
 COOKIE_VALUES = {"UID": "user1", "CID": "cid1", "SEID": "seid1", "KID": "kid1"}
@@ -27,7 +27,7 @@ class TestCurrentUser:
     def test_no_active_user(self, tmp_path):
         cm = _make_cm(tmp_path)
 
-        with pytest.raises(CommandLineError):
+        with pytest.raises(CredentialError):
             _ = cm.current_user
 
 
@@ -45,7 +45,7 @@ class TestCurrentCredential:
     def test_no_active_user(self, tmp_path):
         cm = _make_cm(tmp_path)
 
-        with pytest.raises(CommandLineError):
+        with pytest.raises(CredentialError):
             _ = cm.current_credential
 
 
@@ -92,14 +92,14 @@ class TestLogout:
         cm.login("user1", CredType.COOKIE)
 
         cm.logout()
-        with pytest.raises(CommandLineError):
+        with pytest.raises(CredentialError):
             _ = cm.current_user
-        with pytest.raises(CommandLineError):
+        with pytest.raises(CredentialError):
             _ = cm.current_credential
         cm = _make_cm(tmp_path)
-        with pytest.raises(CommandLineError):
+        with pytest.raises(CredentialError):
             _ = cm.current_user
-        with pytest.raises(CommandLineError):
+        with pytest.raises(CredentialError):
             _ = cm.current_credential
 
     def test_removes_current_user_file(self, tmp_path):
@@ -129,7 +129,7 @@ class TestGetCredential:
     def test_raises_if_user_not_found(self, tmp_path):
         cm = _make_cm(tmp_path)
 
-        with pytest.raises(CommandLineError, match="user1"):
+        with pytest.raises(CredentialError, match="user1"):
             cm.get_credential("user1")
 
 

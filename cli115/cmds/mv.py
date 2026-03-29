@@ -18,9 +18,7 @@ class MvCommand(BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         if len(args.paths) < 2:
-            raise CommandLineError(
-                "Error: mv requires at least a source and destination path."
-            )
+            raise CommandLineError("mv requires at least a source and destination path")
 
         *src_paths, dst_path = args.paths
         client = self._create_client()

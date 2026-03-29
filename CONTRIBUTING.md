@@ -4,6 +4,7 @@
 
 - Code including tests should be maintainable and consistent. Read existing code carefully before making changes and follow the existing style and structure.
 - Docstring for private methods or functions is not needed unless the logic is complex.
+- Log messages, exception messages should *NOT* be capitalized and *NOT* end with a period, except for a long message with multiple sentences.
 
 ### Command Implementation
 - Don't catch unexpected exceptions in commands, users should be able to see the full traceback when something unexpected happens.

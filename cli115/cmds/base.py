@@ -11,6 +11,7 @@ from typing import Sequence, TypeVar
 from cli115.auth.cookie import CookieAuth
 from cli115.client import Client, create_client
 from cli115.credentials import CredentialManager
+from cli115.exceptions import CommandLineError
 
 
 T = TypeVar("T")
@@ -50,7 +51,7 @@ class BaseCommand(ABC):
             )
             return create_client(auth)
         else:
-            raise ValueError(f"Unsupported credential type: {cred_type}")
+            raise CommandLineError(f"unsupported credential type: {cred_type}")
 
 
 class PaginationCommand(BaseCommand, ABC):

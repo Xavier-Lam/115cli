@@ -68,7 +68,7 @@ class AuthCookieCommand(BaseCommand):
             return parse_cookie_string(args.cookie_value)
         if not (args.uid and args.cid and args.seid and args.kid):
             raise CommandLineError(
-                "Error: Provide either a cookie string or all of --uid, --cid, --seid, --kid"
+                "provide either a cookie string or all of --uid, --cid, --seid, --kid"
             )
         return {
             "UID": args.uid,
@@ -82,7 +82,7 @@ class AuthCookieCommand(BaseCommand):
         missing = required - set(cookies.keys())
         if missing:
             raise CommandLineError(
-                f"Error: Missing required cookies: {', '.join(sorted(missing))}"
+                f"missing required cookies: {', '.join(sorted(missing))}"
             )
 
     def _store(self, cookies: dict[str, str]) -> AccountInfo:

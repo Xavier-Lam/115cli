@@ -1,8 +1,11 @@
 import random
 import time
 
+import pytest
+
 from cli115.client.base import CloudTask, Directory, DownloadQuota
 from cli115.client.models import TaskStatus
+from tests.client.conftest import make_client
 
 
 def _random_image_url():
@@ -73,3 +76,12 @@ class TestDownloadAddAndDelete:
             if hashes:
                 time.sleep(0.5)
                 api_client.download.delete(*hashes)
+
+    def test_add_url_with_nonexistent_dest(self):
+        client = make_client()
+        # id=0 signals the destination directory does not exist
+        client._api.fs_dir_getid.return_value = {"state": True, "id": 0}
+        with pytest.raises(FileNotFoundError):
+            client.download.add_url(
+                "http://example.com/file.zip", dest_dir="/nonexistent"
+            )

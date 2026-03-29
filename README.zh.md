@@ -32,6 +32,8 @@ pip install 115cli
 # 目录
 115cli ls /
 115cli ls /path/to/dir -l
+# 创建时间倒叙
+115cli ls -l --sort created --desc
 
 # 文件操作
 115cli mkdir /new-folder
@@ -56,6 +58,8 @@ pip install 115cli
 115cli upload --instant-only /local/file.txt /remote/dir/file.txt
 # 文件夹上传
 115cli upload /local/folder/ /remote/dir/
+# 文件黑白名单
+115cli upload /local/folder/ /remote/dir/ --include "**/*.mkv" --include "**/*.mp4" --exclude "secret/*"
 
 # 离线下载
 115cli download quota
@@ -71,7 +75,7 @@ pip install 115cli
 本项目目前只支持通过浏览器拿到的 cookie 登录.登录时需要提供 `UID`, `CID`, `SEID` 和 `KID` 四个 cookie 值.
 
 ```bash
-115cli auth cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
+115cli login cookie "UID=xxx; CID=xxx; SEID=xxx; KID=xxx"
 ```
 
 ## Client API

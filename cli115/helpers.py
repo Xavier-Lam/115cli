@@ -15,6 +15,24 @@ def normalize_path(path: str) -> str:
     return path.rstrip("/")
 
 
+def join_path(base: str, *parts: str) -> str:
+    """Join a remote base path with one or more name segments.
+
+    Strips trailing slashes from the base and joins each part with ``/``.
+    Equivalent to ``posixpath.join`` but always strips trailing slashes from
+    each component so the result never has a double slash.
+
+    Examples::
+
+        join_path("/remote/dir", "file.txt")     # "/remote/dir/file.txt"
+        join_path("/remote/dir/", "sub", "f.bin") # "/remote/dir/sub/f.bin"
+    """
+    path = normalize_path(base)
+    for part in parts:
+        path = path.rstrip("/") + "/" + part.lstrip("/")
+    return path
+
+
 def parse_cookie_string(cookie_str: str) -> dict[str, str]:
     sc = SimpleCookie()
     sc.load(cookie_str)
@@ -53,11 +71,11 @@ def parse_size(s: str | int) -> int:
         return int(s)
     m = re.fullmatch(r"([0-9]*\.?[0-9]+)\s*([A-Za-z]+)", s)
     if not m:
-        raise ValueError(f"Invalid file size: {s!r}")
+        raise ValueError(f"invalid file size: {s!r}")
     number, unit = m.groups()
     unit = unit.upper()
     if unit not in _SIZE_UNITS:
-        raise ValueError(f"Unknown unit {unit!r} in file size: {s!r}")
+        raise ValueError(f"unknown unit {unit!r} in file size: {s!r}")
     return int(float(number) * _SIZE_UNITS[unit])
 
 

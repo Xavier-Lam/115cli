@@ -1,6 +1,26 @@
 import pytest
 
-from cli115.helpers import normalize_path, parse_cookie_string, parse_size
+from cli115.helpers import join_path, normalize_path, parse_cookie_string, parse_size
+
+
+class TestJoinPath:
+    def test_simple_join(self):
+        assert join_path("/remote/dir", "file.txt") == "/remote/dir/file.txt"
+
+    def test_trailing_slash_on_base_stripped(self):
+        assert join_path("/remote/dir/", "file.txt") == "/remote/dir/file.txt"
+
+    def test_multiple_parts(self):
+        assert join_path("/base", "sub", "file.bin") == "/base/sub/file.bin"
+
+    def test_single_segment_base(self):
+        assert join_path("/dir", "name.txt") == "/dir/name.txt"
+
+    def test_no_double_slash(self):
+        assert "//" not in join_path("/base/", "/child")
+
+    def test_root_base(self):
+        assert join_path("/", "dir") == "/dir"
 
 
 class TestNormalizePath:

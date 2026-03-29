@@ -7,7 +7,7 @@ import json
 from enum import Enum
 from pathlib import Path
 
-from cli115.exceptions import CommandLineError
+from cli115.exceptions import CredentialError
 
 
 CURRENT_CREDENTIAL_FILE = "_current_credential"
@@ -34,7 +34,7 @@ class CredentialManager:
         """
         current_file = self.credentials_dir / CURRENT_CREDENTIAL_FILE
         if not current_file.exists():
-            raise CommandLineError("No active user. Use '115cli login' to log in.")
+            raise CredentialError("no active user, use '115cli login' to log in")
         return current_file.read_text().strip()
 
     @property
@@ -69,14 +69,14 @@ class CredentialManager:
         """Load credentials for *uid* from ``{uid}.json``."""
         cred_path = self.credentials_dir / f"{uid}.json"
         if not cred_path.exists():
-            raise CommandLineError(f"No credentials found for user '{uid}'.")
+            raise CredentialError(f"no credentials found for user '{uid}'")
         with open(cred_path) as f:
             credentials = json.load(f)
         if cred_type is None:
             cred_type = _get_credential_type(credentials, uid)
         elif cred_type not in credentials:
-            raise CommandLineError(
-                f"No '{cred_type}' credentials found for user '{uid}'."
+            raise CredentialError(
+                f"no '{cred_type}' credentials found for user '{uid}'"
             )
         return cred_type, credentials[cred_type]
 
@@ -102,7 +102,7 @@ class CredentialManager:
         """Remove stored credentials for a user."""
         cred_path = self.credentials_dir / f"{uid}.json"
         if not cred_path.exists():
-            raise FileNotFoundError(f"No credentials found for user '{uid}'.")
+            raise FileNotFoundError(f"no credentials found for user '{uid}'")
         if cred_type is None:
             cred_path.unlink()
         else:
@@ -125,6 +125,6 @@ def _get_credential_type(credentials: dict, uid: str) -> CredType:
     if not cred_type:
         available = [t for t in CredType if t in credentials]
         if not available:
-            raise CommandLineError(f"No credentials found for user '{uid}'.")
+            raise CredentialError(f"no credentials found for user '{uid}'")
         cred_type = available[0]
     return cred_type

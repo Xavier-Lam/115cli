@@ -35,12 +35,8 @@ from cli115.client.models import (
     TaskStatus,
 )
 from cli115.client.utils import parse_item, parse_ts
-from cli115.exceptions import (
-    AlreadyExistsError,
-    InstantUploadNotAvailableError,
-    NotFoundError,
-)
-from cli115.helpers import normalize_path, sha1_file
+from cli115.exceptions import InstantUploadNotAvailableError
+from cli115.helpers import normalize_path, sha1_file, join_path
 
 
 DEFAULT_USER_AGENT = (
@@ -86,7 +82,7 @@ class WebAPIClient(Client):
         dir_id = str(resp["id"])
         if dir_id == "0":
             # the api returns success with id=0 for non-existent paths
-            raise NotFoundError("directory not found: %s" % path, errno=990002)
+            raise FileNotFoundError("directory not found: %s" % path)
         return dir_id
 
 
@@ -121,7 +117,7 @@ class WebAPIFileClient(FileClient):
         resp = check_response(resp)
         data = resp.get("data", [])
         if not data:
-            raise NotFoundError(f"Not found: {file_id}", errno=990002)
+            raise FileNotFoundError(f"file id not found: {file_id}")
         item = parse_item(data[0])
         return new_lazy_cls(item, self)
 
@@ -170,7 +166,7 @@ class WebAPIFileClient(FileClient):
         for raw in resp.get("data", []):
             item = parse_item(raw)
             if path is not None:
-                item.path = f"{path.rstrip('/')}/{item.name}"
+                item.path = join_path(path, item.name)
             items.append(item)
 
         pagination = Pagination(
@@ -218,14 +214,19 @@ class WebAPIFileClient(FileClient):
 
         try:
             pid = self._client._resolve_dir_id(dirname)
-        except NotFoundError:
+        except FileNotFoundError:
             if not parents:
                 raise
             parent_dir = self.create_directory(dirname, parents=True)
             pid = parent_dir.id
 
-        resp = self._client._api.fs_mkdir(name, pid=pid)
-        resp = check_response(resp)
+        try:
+            resp = self._client._api.fs_mkdir(name, pid=pid)
+            resp = check_response(resp)
+        except FileExistsError:
+            if parents:
+                return self.stat(path)  # directory already exists, return it
+            raise
         return Directory(
             id=str(resp.get("cid") or resp.get("file_id", "")),
             parent_id=pid,
@@ -238,11 +239,11 @@ class WebAPIFileClient(FileClient):
         )
 
     def delete(self, path: str | FileSystemEntry, *, recursive: bool = False) -> None:
-        entry = self._resolve_entry(path)
+        entry = self.stat(path)
         if not recursive and entry.is_directory:
             items = self.list(path)
             if len(items) > 0:
-                raise AlreadyExistsError(f"Directory is not empty: {path}")
+                raise FileExistsError(f"directory is not empty: {path}")
         resp = self._client._api.fs_delete(entry.id)
         check_response(resp)
 
@@ -293,7 +294,7 @@ class WebAPIFileClient(FileClient):
         path: str,
         file: BinaryIO,
         *,
-        instant_only: bool = False,
+        instant_only: int | None = None,
         progress_callback: Callable[[Progress], object] | None = None,
     ) -> File:
         path = normalize_path(path)
@@ -301,10 +302,10 @@ class WebAPIFileClient(FileClient):
         # raise an error if the file already exists
         try:
             self.stat(path)
-        except NotFoundError:
+        except FileNotFoundError:
             pass
         else:
-            raise AlreadyExistsError(f"File already exists: {path}", errno=0)
+            raise FileExistsError(f"remote path '{path}' already exists")
 
         parent_path = os.path.dirname(path)
         filename = os.path.basename(path)
@@ -314,6 +315,7 @@ class WebAPIFileClient(FileClient):
 
         # Only attempt instant upload when the file meets the minimum size.
         if file_size >= MIN_INSTANT_UPLOAD_SIZE:
+            force_instant = instant_only is not None and file_size >= instant_only
             try:
                 success = self._try_instant_upload(
                     file=file,
@@ -324,20 +326,19 @@ class WebAPIFileClient(FileClient):
                     path=path,
                 )
             except Exception as exc:
-                if instant_only:
+                if force_instant:
                     raise
                 warnings.warn(
-                    f"Instant upload failed ({exc}); falling back to " "normal upload",
+                    f"instant upload failed ({exc}); falling back to normal upload",
                     stacklevel=2,
                 )
             else:
                 if success:
                     return self.stat(path)
-                if instant_only:
+                if force_instant:
                     raise InstantUploadNotAvailableError(
-                        "Instant upload is not available for this file "
-                        "(file not found on server)",
-                        errno=0,
+                        "instant upload is not available for this file "
+                        "(file not found on server)"
                     )
             file.seek(0)
 
@@ -397,8 +398,7 @@ class WebAPIFileClient(FileClient):
     def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)
         if entry.is_directory:
-            raise ValueError("Cannot get download info for a directory")
-        assert isinstance(entry, File)
+            raise IsADirectoryError("cannot get download info for a directory")
 
         ua = user_agent or DEFAULT_USER_AGENT
         p115url = self._client._api.download_url(entry.pickcode, user_agent=ua)
@@ -462,7 +462,7 @@ class WebAPIFileClient(FileClient):
             offset += len(data)
             if offset >= total or not data:
                 break
-        raise NotFoundError(f"Not found: {path}", errno=990002)
+        raise FileNotFoundError(f"entry not found: {path}")
 
 
 class WebAPIDownloadClient(DownloadClient):

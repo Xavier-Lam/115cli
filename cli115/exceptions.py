@@ -13,15 +13,12 @@ class APIError(Exception):
         super().__init__(message)
 
 
-class NotFoundError(APIError):
-    """Raised when a requested file or directory is not found."""
+class InstantUploadNotAvailableError(Exception):
+    """Raised when instant upload is requested but the file is not available
+    on the server (i.e. the file has never been uploaded before)."""
 
 
-class AlreadyExistsError(APIError):
-    """Raised when a resource with the same name already exists."""
-
-
-class WAFBlockedError(APIError):
+class WAFBlockedError(Exception):
     """Raised when requests are blocked by Aliyun WAF.
 
     This happens when too many requests are sent in a short period of time.
@@ -30,12 +27,9 @@ class WAFBlockedError(APIError):
     """
 
 
-class InstantUploadNotAvailableError(APIError):
-    """Raised when instant upload is requested but the file is not available
-    on the server (i.e. the file has never been uploaded before)."""
+class CredentialError(Exception):
+    """Raised when credentials are missing or invalid."""
 
 
 class CommandLineError(Exception):
     """Friendly error message for CLI command failures."""
-
-    pass

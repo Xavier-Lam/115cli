@@ -80,11 +80,11 @@ class FetchCommand(BaseCommand):
                 sha1, size = sha1_file(f)
                 if size != info.size:
                     raise CommandLineError(
-                        f"Size mismatch: expected {info.size}, got {size}"
+                        f"size mismatch: expected {info.size}, got {size}"
                     )
                 if sha1 != info.sha1:
                     raise CommandLineError(
-                        f"SHA1 mismatch: expected {info.sha1}, got {sha1}"
+                        f"sha1 mismatch: expected {info.sha1}, got {sha1}"
                     )
 
         print(f"Saved to {output}")

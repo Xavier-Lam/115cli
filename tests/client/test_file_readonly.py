@@ -1,11 +1,11 @@
 import hashlib
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
 from cli115.client import Directory, File, SortField, SortOrder
-from cli115.exceptions import NotFoundError
-from tests.client.conftest import upload_file
+from tests.client.conftest import make_client, make_dir, make_file, upload_file
 
 
 class TestId:
@@ -25,9 +25,11 @@ class TestId:
         assert result.name == shared.file_small.name
         assert result.path == shared.file_small.path
 
-    def test_id_nonexistent(self, api_client):
-        with pytest.raises(NotFoundError):
-            api_client.file.id("999999999999999")
+    def test_id_nonexistent(self):
+        client = make_client()
+        client._api.fs_file.return_value = {"state": True, "data": []}
+        with pytest.raises(FileNotFoundError):
+            client.file.id("999999999999999")
 
 
 class TestStat:
@@ -51,6 +53,13 @@ class TestStat:
         assert result.parent_id == shared.file_small.parent_id
         assert result.size == shared.file_small.size
         assert result.sha1 == shared.file_small.sha1
+
+    def test_stat_nonexistent(self):
+        client = make_client()
+        client._api.fs_dir_getid.return_value = {"state": True, "id": "100"}
+        client._api.fs_files.return_value = {"state": True, "count": 0, "data": []}
+        with pytest.raises(FileNotFoundError):
+            client.file.stat("/parent/nonexistent")
 
 
 class TestList:
@@ -102,7 +111,7 @@ class TestList:
         assert len(collection) == 0
 
     def test_list_nonexistent_raises(self, api_client, shared):
-        with pytest.raises(NotFoundError):
+        with pytest.raises(FileNotFoundError):
             api_client.file.list(f"{shared.root_dir.path}/nonexistent")
 
     def test_list_sort_order(self, api_client, sort_dir):
@@ -130,6 +139,17 @@ class TestList:
         names = [item.name for item in items]
         assert names.index("zzz") < names.index("aaa")
 
+    def test_list_raises(self):
+        client = make_client()
+        client.file.stat = MagicMock(return_value=make_file())
+        with pytest.raises(NotADirectoryError):
+            client.file.list("/some/dir")
+
+        client = make_client()
+        client.file.stat = MagicMock(side_effect=FileNotFoundError("path not found"))
+        with pytest.raises(FileNotFoundError):
+            client.file.list("/some/dir")
+
 
 class TestFind:
 
@@ -140,7 +160,7 @@ class TestFind:
         find_sub_dir = api_client.file.create_directory(f"{find_dir.path}/subfolder")
         find_sub_file = upload_file(api_client, find_sub_dir.path, fname="sub.bin")
         # Give the server a moment to index the new content
-        time.sleep(1)
+        time.sleep(1.5)
         api_client.register_entry(find_dir)
         api_client.register_entry(find_sub_dir)
         api_client.register_entry(find_sub_file)
@@ -198,10 +218,17 @@ class TestFind:
         assert entries[0].is_directory
         assert entries[0].path == sub_dir.path
 
+    def test_find_with_nonexistent_path(self):
+        client = make_client()
+        # id=0 signals the path does not exist
+        client._api.fs_dir_getid.return_value = {"state": True, "id": 0}
+        with pytest.raises(FileNotFoundError):
+            len(client.file.find("query", path="/nonexistent"))
 
-class TestDownloadInfo:
 
-    def test_download_info_returns_valid_object(self, api_client, shared):
+class TestDownloadUrl:
+
+    def test_url_returns_valid_object(self, api_client, shared):
         info = api_client.file.url(shared.file_large.path)
         assert info.url.startswith("http")
         assert info.file_name == shared.file_large.name
@@ -213,6 +240,19 @@ class TestDownloadInfo:
         assert "CID" in info.cookies
         assert "SEID" in info.cookies
         assert "KID" in info.cookies
+
+    def test_url_directory_raises(self):
+        client = make_client()
+        client.file._resolve_entry = MagicMock(return_value=make_dir())
+        with pytest.raises(IsADirectoryError):
+            client.file.url("/some/dir")
+
+        client = make_client()
+        client.file._resolve_entry = MagicMock(
+            side_effect=FileNotFoundError("path not found")
+        )
+        with pytest.raises(FileNotFoundError):
+            client.file.url("/some/dir")
 
 
 class TestOpen:
@@ -235,3 +275,16 @@ class TestOpen:
 
         assert data[:100] == chunk1
         assert data[100:300] == chunk2
+
+    def test_open_raises(self):
+        client = make_client()
+        client.file._resolve_entry = MagicMock(return_value=make_dir())
+        with pytest.raises(IsADirectoryError):
+            client.file.open("/some/dir")
+
+        client = make_client()
+        client.file._resolve_entry = MagicMock(
+            side_effect=FileNotFoundError("path not found")
+        )
+        with pytest.raises(FileNotFoundError):
+            client.file.open("/some/dir")

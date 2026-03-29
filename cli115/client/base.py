@@ -151,7 +151,7 @@ class FileClient(ABC):
             A Directory or File object.
 
         Raises:
-            cli115.exceptions.NotFoundError: If the path does not exist.
+            FileNotFoundError: If the path does not exist.
         """
 
     @abstractmethod
@@ -165,7 +165,7 @@ class FileClient(ABC):
             A Directory or File object.
 
         Raises:
-            cli115.exceptions.NotFoundError: If the path does not exist.
+            FileNotFoundError: If the path does not exist.
         """
 
     def list(
@@ -187,13 +187,17 @@ class FileClient(ABC):
 
         Returns:
             A :class:`~cli115.helpers.LazyCollection` of directory entries.
+
+        Raises:
+            FileNotFoundError: If the specified path does not exist.
+            NotADirectoryError: If the specified path is not a directory.
         """
 
         if not isinstance(path, Directory):
             # eagerly resolve the path to validate its existence
             path = self.stat(path)
             if not path.is_directory:
-                raise NotADirectoryError(f"Not a directory: {path}")
+                raise NotADirectoryError(f"not a directory: {path}")
 
         def fetch(
             page: int, page_size: int
@@ -248,6 +252,10 @@ class FileClient(ABC):
 
         Returns:
             A :class:`~cli115.helpers.LazyPathCollection` of matching entries.
+
+        Raises:
+            FileNotFoundError: If a non-global search is performed and the
+                specified path does not exist.
         """
 
         def fetch(
@@ -292,11 +300,21 @@ class FileClient(ABC):
                   (e.g. ``"/photos/vacation"``).
             parents: If ``True``, create any missing parent directories
                      automatically (like ``mkdir -p``). If ``False`` (default),
-                     raise :class:`~cli115.exceptions.NotFoundError` when the
-                     parent does not exist.
+                     raise :exc:`FileNotFoundError` when the parent does not exist.
 
         Returns:
             The created Directory.
+
+        Raises:
+            FileExistsError: A directory already exists at the given path if parents
+                 is False
+            FileNotFoundError: If a parent dir does not exist and ``parents`` is
+                ``False``.
+
+        Note:
+            The server does not prevent duplicate names.  If a sibling file with the
+            same name already exists, a second entry sharing that name will be created.
+            Verify the new name is unique before calling this method.
         """
 
     @abstractmethod
@@ -305,10 +323,13 @@ class FileClient(ABC):
 
         Args:
             path: Path to the item to delete.
-            recursive: If ``True`` (default), delete the item even when it is a
-                       non-empty directory. If ``False``, raise
-                       :class:`~cli115.exceptions.DirectoryNotEmptyError` when
-                       the directory contains children.
+            recursive: If ``True``, delete the item even when it is a
+                       non-empty directory. If ``False`` (default), raise
+                       :exc:`FileExistsError` when the directory contains children.
+
+        Raises:
+            FileNotFoundError: If the path does not exist.
+            FileExistsError: If ``recursive`` is ``False`` and the directory is not empty.
         """
 
     @abstractmethod
@@ -319,10 +340,13 @@ class FileClient(ABC):
 
         Args:
             paths: Paths of items to delete.
-            recursive: If ``True`` (default), delete the items even when they are
-                       non-empty directories. If ``False``, raise
-                       :class:`~cli115.exceptions.DirectoryNotEmptyError` when
-                       any directory contains children.
+            recursive: If ``True``, delete the items even when they are
+                       non-empty directories. If ``False`` (default), raise
+                       :exc:`FileExistsError` when any directory contains children.
+
+        Raises:
+            FileNotFoundError: If any path does not exist.
+            FileExistsError: If ``recursive`` is ``False`` and a directory is not empty.
         """
 
     @abstractmethod
@@ -332,6 +356,14 @@ class FileClient(ABC):
         Args:
             path: Path to the item to rename.
             name: New name.
+
+        Raises:
+            FileNotFoundError: If the path does not exist.
+
+        Note:
+            The server does not prevent duplicate names.  If a sibling with
+            ``name`` already exists, a second entry sharing that name will be
+            created.  Verify the new name is unique before calling this method.
         """
 
     @abstractmethod
@@ -341,6 +373,15 @@ class FileClient(ABC):
         Args:
             src: Path to the item to move.
             dest_dir: Destination directory path or :class:`Directory` object.
+
+        Raises:
+            FileNotFoundError: If the source or destination does not exist.
+
+        Note:
+            The server does not prevent duplicate names.  If ``dest_dir``
+            already contains an item with the same name as ``src``, a second
+            entry sharing that name will be created.  Verify the name is
+            unique in the destination before calling this method.
         """
 
     @abstractmethod
@@ -352,6 +393,15 @@ class FileClient(ABC):
         Args:
             srcs: Paths of items to move.
             dest_dir: Destination directory path or :class:`Directory` object.
+
+        Raises:
+            FileNotFoundError: If any source or the destination does not exist.
+
+        Note:
+            The server does not prevent duplicate names.  If ``dest_dir``
+            already contains an item with the same name as any source, a
+            second entry sharing that name will be created.  Verify all names
+            are unique in the destination before calling this method.
         """
 
     @abstractmethod
@@ -361,6 +411,15 @@ class FileClient(ABC):
         Args:
             src: Path to the item to copy.
             dest_dir: Destination directory path or :class:`Directory` object.
+
+        Raises:
+            FileNotFoundError: If the source or destination does not exist.
+
+        Note:
+            The server does not prevent duplicate names.  If ``dest_dir``
+            already contains an item with the same name as ``src``, a second
+            entry sharing that name will be created.  Verify the name is
+            unique in the destination before calling this method.
         """
 
     @abstractmethod
@@ -372,6 +431,15 @@ class FileClient(ABC):
         Args:
             srcs: Paths of items to copy.
             dest_dir: Destination directory path or :class:`Directory` object.
+
+        Raises:
+            FileNotFoundError: If any source or the destination does not exist.
+
+        Note:
+            The server does not prevent duplicate names.  If ``dest_dir``
+            already contains an item with the same name as any source, a
+            second entry sharing that name will be created.  Verify all names
+            are unique in the destination before calling this method.
         """
 
     def upload(
@@ -379,7 +447,7 @@ class FileClient(ABC):
         path: str,
         file: str | PathLike[str] | BinaryIO,
         *,
-        instant_only: bool = False,
+        instant_only: int | None = None,
         progress_callback: Callable[[Progress], object] | None = None,
     ) -> File:
         """Upload a file.
@@ -394,16 +462,24 @@ class FileClient(ABC):
                   parent directory must already exist.
             file: A local file path (str / PathLike) or a readable
                   binary file-like object.
-            instant_only: If ``True``, only attempt instant upload for files
-                  at or above :data:`MIN_INSTANT_UPLOAD_SIZE`.  Files below
-                  that threshold are uploaded normally.  Raises
+            instant_only: If set to a byte threshold (e.g. ``100 * 1024 * 1024``
+                  for 100 MB), files at or above that size will use instant
+                  upload only — the upload fails with
                   :class:`~cli115.exceptions.InstantUploadNotAvailableError`
-                  when instant upload is unavailable for a large-enough file.
+                  if the server does not have a matching copy.  Values below
+                  :data:`MIN_INSTANT_UPLOAD_SIZE` are ignored.
             progress_callback: Optional callable invoked periodically
                   with a :class:`Progress` instance.
 
         Returns:
             The uploaded File entry.
+
+        Raises:
+            FileExistsError: If a file already exists at ``path``.
+            FileNotFoundError: If the parent directory does not exist.
+            InstantUploadNotAvailableError: When the file meets the
+                ``instant_only`` threshold and the server does not have a
+                matching copy of the file.
         """
         opened = None
         if isinstance(file, (str, PathLike)):
@@ -426,7 +502,7 @@ class FileClient(ABC):
         path: str,
         file: BinaryIO,
         *,
-        instant_only: bool = False,
+        instant_only: int | None = None,
         progress_callback: Callable[[Progress], object] | None = None,
     ) -> File:
         """Perform the actual file upload.
@@ -456,6 +532,10 @@ class FileClient(ABC):
 
         Returns:
             A DownloadUrl object with url, user-agent, cookies, and file metadata.
+
+        Raises:
+            FileNotFoundError: If the path does not exist.
+            IsADirectoryError: If ``path`` points to a directory.
         """
 
     def open(self, path: str | File) -> RemoteFile:
@@ -470,6 +550,10 @@ class FileClient(ABC):
 
         Returns:
             A :class:`RemoteFile` wrapping the download URL.
+
+        Raises:
+            FileNotFoundError: If the path does not exist.
+            IsADirectoryError: If ``path`` points to a directory.
         """
         info = self.url(path)
         return RemoteFile(info)

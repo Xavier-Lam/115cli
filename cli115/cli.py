@@ -27,7 +27,7 @@ from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
 from cli115.cmds.url import UrlCommand
-from cli115.exceptions import CommandLineError
+from cli115.exceptions import CommandLineError, CredentialError
 
 
 COMMANDS = OrderedDict(
@@ -134,8 +134,11 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         cmd.execute(args)
-    except CommandLineError as e:
-        print(f"Error: {e}", file=sys.stderr)
+    except (CommandLineError, CredentialError, OSError) as e:
+        typ = type(e).__name__
+        if isinstance(e, CommandLineError):
+            typ = "Error"
+        print(f"{typ}: {e}", file=sys.stderr)
         sys.exit(1)
 
 
