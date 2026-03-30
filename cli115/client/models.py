@@ -230,4 +230,19 @@ class Progress:
     duration: timedelta
 
 
+@dataclass(frozen=True)
+class Usage:
+    """Disk storage information.
+
+    Attributes:
+        total: Total storage capacity in bytes.
+        used: Used storage in bytes.
+        remaining: Remaining (free) storage in bytes.
+    """
+
+    total: int
+    used: int
+    remaining: int
+
+
 # endregion

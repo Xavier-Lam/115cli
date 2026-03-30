@@ -4,7 +4,8 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from cli115.cli import build_parser, load_config
-from cli115.client.models import AccountInfo
+from cli115.client.models import AccountInfo, Usage
+from cli115.cmds.df import DfCommand
 from cli115.credentials import CredentialManager
 
 
@@ -66,3 +67,26 @@ class TestConfigCommand:
         assert "[general]" in output
         assert "[download]" in output
         assert "2m" in output.lower()
+
+
+class TestDfCommand:
+    @patch.object(DfCommand, "_create_client")
+    def test_df(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.account.usage.return_value = Usage(
+            total=1099511627776,  # 1 TiB
+            used=549755813888,  # 512 GiB
+            remaining=549755813888,
+        )
+        mock_create.return_value = mock_client
+
+        cfg = load_config()
+        cm = CredentialManager(cfg)
+        parser, commands = build_parser(cfg, cm)
+        args = parser.parse_args(["df", "--format", "json"])
+        commands["df"].execute(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert "Total" in data
+        assert "Used" in data
+        assert "Free" in data

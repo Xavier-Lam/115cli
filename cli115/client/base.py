@@ -21,6 +21,7 @@ from cli115.client.models import (
     SortField,
     SortOrder,
     TaskFilter,
+    Usage,
 )
 from cli115.client.lazy import LazyPathCollection, LazyCollection
 
@@ -58,6 +59,14 @@ class AccountClient(ABC):
 
         Returns:
             An AccountInfo with user name, user ID, VIP status and expiry.
+        """
+
+    @abstractmethod
+    def usage(self) -> Usage:
+        """Get disk storage usage information.
+
+        Returns:
+            A StorageInfo with total, used, and remaining storage in bytes.
         """
 
 

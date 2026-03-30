@@ -14,6 +14,7 @@ from cli115.cmds.auth import AuthCommand
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.config import ConfigCommand
 from cli115.cmds.cp import CpCommand
+from cli115.cmds.df import DfCommand
 from cli115.cmds.download import DownloadCommand
 from cli115.cmds.fetch import FetchCommand
 from cli115.cmds.find import FindCommand
@@ -37,6 +38,7 @@ COMMANDS = OrderedDict(
         ("login", LoginCommand),
         ("logout", LogoutCommand),
         ("config", ConfigCommand),
+        ("df", DfCommand),
         ("ls", LsCommand),
         ("find", FindCommand),
         ("cp", CpCommand),

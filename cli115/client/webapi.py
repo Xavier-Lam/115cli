@@ -34,6 +34,7 @@ from cli115.client.models import (
     SortOrder,
     TaskFilter,
     TaskStatus,
+    Usage,
 )
 from cli115.client.utils import parse_item, parse_ts
 from cli115.exceptions import InstantUploadNotAvailableError
@@ -103,6 +104,16 @@ class WebAPIAccountClient(AccountClient):
             user_id=int(data.get("user_id", 0)),
             vip=bool(data.get("vip", 0)),
             expire=expire,
+        )
+
+    def usage(self) -> Usage:
+        resp = self._client._api.fs_index_info()
+        check_response(resp)
+        space = resp.get("data", {}).get("space_info", {})
+        return Usage(
+            total=int(space.get("all_total", {}).get("size", 0)),
+            used=int(space.get("all_use", {}).get("size", 0)),
+            remaining=int(space.get("all_remain", {}).get("size", 0)),
         )
 
 
