@@ -7,34 +7,10 @@ import argparse
 from cli115.auth import CookieAuth
 from cli115.client import create_client
 from cli115.client.models import AccountInfo
-from cli115.cmds.base import BaseCommand
+from cli115.cmds.base import BaseCommand, MultiCommand
 from cli115.credentials import CredType
 from cli115.exceptions import CommandLineError
 from cli115.helpers import parse_cookie_string
-
-
-class AuthCommand(BaseCommand):
-    """Store credentials for future use or validate existing ones."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._cookie_cmd = AuthCookieCommand(*args, **kwargs)
-        self._validate_cmd = AuthValidateCommand(*args, **kwargs)
-
-    def register(self, parser: argparse.ArgumentParser) -> None:
-        subparsers = parser.add_subparsers(dest="auth_action", required=True)
-        cookie_parser = subparsers.add_parser("cookie", help="Store cookie credentials")
-        self._cookie_cmd.register(cookie_parser)
-        validate_parser = subparsers.add_parser(
-            "validate", help="Validate stored credentials for a user"
-        )
-        self._validate_cmd.register(validate_parser)
-
-    def execute(self, args: argparse.Namespace) -> None:
-        if args.auth_action == "cookie":
-            self._cookie_cmd.execute(args)
-        elif args.auth_action == "validate":
-            self._validate_cmd.execute(args)
 
 
 class AuthCookieCommand(BaseCommand):
@@ -121,3 +97,12 @@ class AuthValidateCommand(BaseCommand):
         client = self._create_client(args.username, args.cred_type)
         account = client.account.info()
         return account
+
+
+class AuthCommand(MultiCommand):
+    """Store credentials for future use or validate existing ones."""
+
+    subcommands = [
+        ("cookie", AuthCookieCommand),
+        ("validate", AuthValidateCommand),
+    ]

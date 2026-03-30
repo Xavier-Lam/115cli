@@ -108,3 +108,24 @@ class PaginationCommand(BaseCommand, ABC):
                 file=sys.stderr,
             )
         return items
+
+
+class MultiCommand(BaseCommand, ABC):
+    """Base class for commands that dispatch to named subcommands."""
+
+    subcommands: list[tuple[str, type[BaseCommand]]] = []
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._subcmd_instances: dict[str, BaseCommand] = {
+            name: cls(*args, **kwargs) for name, cls in self.subcommands
+        }
+
+    def register(self, parser: argparse.ArgumentParser) -> None:
+        sub = parser.add_subparsers(dest="action", required=True)
+        for name, cmd in self.subcommands:
+            sub_parser = sub.add_parser(name, help=cmd.__doc__)
+            self._subcmd_instances[name].register(sub_parser)
+
+    def execute(self, args: argparse.Namespace) -> None:
+        self._subcmd_instances[args.action].execute(args)

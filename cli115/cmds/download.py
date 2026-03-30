@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from cli115.client.models import CloudTask
-from cli115.cmds.base import BaseCommand, PaginationCommand
+from cli115.cmds.base import BaseCommand, MultiCommand, PaginationCommand
 from cli115.cmds.formatter import format_size, ListFormatterMixin, PairFormatterMixin
 
 
@@ -26,41 +26,6 @@ def _task_record(task: CloudTask) -> list[tuple[str, object]]:
         ("Status", _STATUS_LABELS.get(task.status.value, str(task.status.value))),
         ("Progress", f"{task.percent_done:.1f}%"),
     ]
-
-
-class DownloadCommand(BaseCommand):
-    """Cloud download (offline) operations."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._quota_cmd = DownloadQuotaCommand(*args, **kwargs)
-        self._list_cmd = DownloadListCommand(*args, **kwargs)
-        self._add_cmd = DownloadAddCommand(*args, **kwargs)
-        self._delete_cmd = DownloadDeleteCommand(*args, **kwargs)
-
-    def register(self, parser: argparse.ArgumentParser) -> None:
-        sub = parser.add_subparsers(dest="download_action", required=True)
-
-        quota_parser = sub.add_parser("quota", help="Show cloud download quota")
-        self._quota_cmd.register(quota_parser)
-
-        list_parser = sub.add_parser("list", help="List cloud download tasks")
-        self._list_cmd.register(list_parser)
-
-        add_parser = sub.add_parser("add", help="Add URL(s) as cloud download tasks")
-        self._add_cmd.register(add_parser)
-
-        del_parser = sub.add_parser("delete", help="Delete cloud download tasks")
-        self._delete_cmd.register(del_parser)
-
-    def execute(self, args: argparse.Namespace) -> None:
-        cmd_map = {
-            "quota": self._quota_cmd,
-            "list": self._list_cmd,
-            "add": self._add_cmd,
-            "delete": self._delete_cmd,
-        }
-        cmd_map[args.download_action].execute(args)
 
 
 class DownloadQuotaCommand(PairFormatterMixin, BaseCommand):
@@ -125,3 +90,14 @@ class DownloadDeleteCommand(BaseCommand):
         client.download.delete(*args.hashes)
         for h in args.hashes:
             print(f"Deleted: {h}")
+
+
+class DownloadCommand(MultiCommand):
+    """Cloud download (offline) operations."""
+
+    subcommands = [
+        ("quota", DownloadQuotaCommand),
+        ("list", DownloadListCommand),
+        ("add", DownloadAddCommand),
+        ("delete", DownloadDeleteCommand),
+    ]
