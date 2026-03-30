@@ -53,7 +53,9 @@ class FetchCommand(BaseCommand):
         )
         start = time.monotonic()
         with (
-            client.file.open(args.path) as remote,
+            client.file.open(
+                args.path, user_agent=self.cfg["general"]["user_agent"]
+            ) as remote,
             open(output, "w+b") as f,
             ThreadPoolExecutor(max_workers=1) as pool,
         ):

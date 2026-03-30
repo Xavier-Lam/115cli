@@ -144,7 +144,7 @@ class TestFileClientOpen:
         assert isinstance(rf, RemoteFile)
         assert rf.name == info.file_name
         assert rf.size == info.file_size
-        mock_self.url.assert_called_once_with("/some/path")
+        mock_self.url.assert_called_once_with("/some/path", user_agent=None)
 
     def test_open_with_file_object(self):
         info = _make_info(file_name="test.mkv", file_size=2048)
@@ -155,4 +155,4 @@ class TestFileClientOpen:
         assert isinstance(rf, RemoteFile)
         assert rf.name == "test.mkv"
         assert rf.size == 2048
-        mock_self.url.assert_called_once_with(mock_file)
+        mock_self.url.assert_called_once_with(mock_file, user_agent=None)

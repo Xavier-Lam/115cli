@@ -81,7 +81,7 @@ class UrlCommand(PairFormatterMixin, BaseCommand):
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
-        info = client.file.url(args.path)
+        info = client.file.url(args.path, user_agent=self.cfg["general"]["user_agent"])
 
         pairs = [
             ("url", info.url),

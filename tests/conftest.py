@@ -1,3 +1,13 @@
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_real_config(tmp_path, monkeypatch):
+    # Point DEFAULT_CONFIG_FILE to a path that doesn't exist so load_config()
+    # always returns defaults instead of reading the real machine config.
+    monkeypatch.setattr("cli115.cli.DEFAULT_CONFIG_FILE", tmp_path / "config.ini")
+
+
 def pytest_collection_modifyitems(items):
     """Run non-client tests first, then client readonly, then client mutating."""
     readonly_modules = {"test_account", "test_file_readonly"}

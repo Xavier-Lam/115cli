@@ -572,7 +572,7 @@ class FileClient(ABC):
             IsADirectoryError: If ``path`` points to a directory.
         """
 
-    def open(self, path: str | File) -> RemoteFile:
+    def open(self, path: str | File, *, user_agent: str | None = None) -> RemoteFile:
         """Get a lazy file-like object for a remote file.
 
         The returned :class:`RemoteFile` supports ``read``, ``seek`` and
@@ -581,6 +581,8 @@ class FileClient(ABC):
 
         Args:
             path: Path to the file or a :class:`File` object.
+            user_agent: Custom User-Agent string for the download request.
+                If ``None``, uses :data:`DEFAULT_USER_AGENT`.
 
         Returns:
             A :class:`RemoteFile` wrapping the download URL.
@@ -589,7 +591,7 @@ class FileClient(ABC):
             FileNotFoundError: If the path does not exist.
             IsADirectoryError: If ``path`` points to a directory.
         """
-        info = self.url(path)
+        info = self.url(path, user_agent=user_agent)
         return RemoteFile(info)
 
 

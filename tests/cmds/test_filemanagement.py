@@ -578,7 +578,7 @@ class TestUploadCommand:
 class TestUrlCommand:
     @patch.object(UrlCommand, "_create_client")
     def test_aria2c_output(self, mock_create, capsys):
-        cfg = ConfigParser()
+        cfg = load_config()
         cfg["download"] = {"min_split_size": "2M", "max_connection": "10"}
         mock_client = MagicMock()
         mock_client.file.url.return_value = _make_url()
@@ -602,7 +602,7 @@ class TestUrlCommand:
 
     @patch.object(UrlCommand, "_create_client")
     def test_aria2c_with_check_integrity(self, mock_create, capsys):
-        cfg = ConfigParser()
+        cfg = load_config()
         cfg["download"] = {"min_split_size": "2M", "max_connection": "10"}
         mock_client = MagicMock()
         mock_client.file.url.return_value = _make_url()
