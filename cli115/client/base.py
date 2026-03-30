@@ -20,6 +20,7 @@ from cli115.client.models import (
     Progress,
     SortField,
     SortOrder,
+    TaskFilter,
 )
 from cli115.client.lazy import LazyPathCollection, LazyCollection
 
@@ -71,23 +72,31 @@ class DownloadClient(ABC):
             A DownloadQuota with remaining and total quota.
         """
 
-    def list(self) -> Sequence[CloudTask]:
+    def list(self, filter: TaskFilter | None = None) -> Sequence[CloudTask]:
         """Return a lazy collection of all cloud download tasks.
 
         Warning: Avoid fully loading all tasks if you don't know the total
         number of items, as this will trigger many API requests.
         """
-        return LazyCollection(self._list, page_size=30)
+        return LazyCollection(
+            lambda page, page_size: self._list(
+                page=page,
+                page_size=page_size,
+                filter=filter,
+            ),
+            page_size=DEFAULT_PAGE_SIZE,
+        )
 
     @abstractmethod
     def _list(
-        self, page: int = 1, page_size: int = 30
+        self, page: int = 1, page_size: int = 30, filter: TaskFilter | None = None
     ) -> tuple[list[CloudTask], Pagination]:
         """List cloud download tasks.
 
         Args:
             page: Page number (1-based).
             page_size: Number of items per page.
+            filter: Filter tasks by status.
 
         Returns:
             A tuple of (tasks, pagination).
@@ -131,6 +140,22 @@ class DownloadClient(ABC):
 
         Args:
             task_hashes: info_hash values of tasks to delete.
+        """
+
+    @abstractmethod
+    def clear(self, filter: TaskFilter | None = None) -> None:
+        """Clear cloud download tasks.
+
+        Args:
+            filter: Filter tasks to clear. If ``None``, clears all tasks.
+        """
+
+    @abstractmethod
+    def retry(self, info_hash: str) -> None:
+        """Retry a failed cloud download task.
+
+        Args:
+            info_hash: info_hash of the task to retry.
         """
 
 

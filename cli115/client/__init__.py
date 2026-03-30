@@ -5,6 +5,7 @@ from cli115.client.models import (
     FileSystemEntry,
     SortField,
     SortOrder,
+    TaskFilter,
     TaskStatus,
 )
 from cli115.client.factory import create_client
@@ -16,6 +17,7 @@ __all__ = [
     "FileSystemEntry",
     "SortField",
     "SortOrder",
+    "TaskFilter",
     "TaskStatus",
     "create_client",
 ]

@@ -37,6 +37,14 @@ class TaskStatus(int, Enum):
     COMPLETED = 2
 
 
+class TaskFilter(str, Enum):
+    """Filter type for listing or clearing cloud download tasks."""
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+    RUNNING = "running"
+
+
 # endregion
 # region File System Models
 

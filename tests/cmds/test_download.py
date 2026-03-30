@@ -6,13 +6,17 @@ from cli115.cli import build_parser, load_config
 from cli115.client.models import (
     CloudTask,
     DownloadQuota,
+    TaskFilter,
     TaskStatus,
 )
 from cli115.cmds.download import (
     DownloadAddCommand,
+    DownloadClearCommand,
     DownloadDeleteCommand,
+    DownloadInfoCommand,
     DownloadListCommand,
     DownloadQuotaCommand,
+    DownloadRetryCommand,
 )
 from cli115.credentials import CredentialManager
 from tests.helpers import make_lazy
@@ -30,6 +34,7 @@ def _make_task(
     size=2048,
     status=TaskStatus.DOWNLOADING,
     percent_done=50.0,
+    file_id="",
 ):
     return CloudTask(
         info_hash=info_hash,
@@ -38,7 +43,7 @@ def _make_task(
         status=status,
         percent_done=percent_done,
         url="https://example.com/file.png",
-        file_id="",
+        file_id=file_id,
         pick_code="",
         folder_id="0",
         add_time=datetime(2025, 1, 1),
@@ -74,6 +79,24 @@ class TestDownloadCommand:
         assert len(data) == 1
         assert data[0]["Hash"] == "abc123hash"
         assert data[0]["Name"] == "test-download.png"
+
+        mock_client = MagicMock()
+        mock_client.download.list.return_value = make_lazy(
+            [
+                _make_task(status=TaskStatus.COMPLETED, percent_done=100.0),
+            ]
+        )
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            ["download", "list", "--filter", "completed", "--format", "json"]
+        )
+        cmds["download"].execute(args)
+
+        mock_client.download.list.assert_called_once_with(filter=TaskFilter.COMPLETED)
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 1
 
     @patch.object(DownloadDeleteCommand, "_create_client")
     def test_delete(self, mock_create, capsys):
@@ -148,3 +171,56 @@ class TestDownloadCommand:
         output = capsys.readouterr().out
         assert "hash1" in output
         assert "hash2" in output
+
+    @patch.object(DownloadClearCommand, "_create_client")
+    def test_clear_all(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["download", "clear"])
+        cmds["download"].execute(args)
+
+        mock_client.download.clear.assert_called_once_with(filter=None)
+        assert "all" in capsys.readouterr().out
+
+    @patch.object(DownloadClearCommand, "_create_client")
+    def test_clear_completed(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["download", "clear", "--filter", "completed"])
+        cmds["download"].execute(args)
+
+        mock_client.download.clear.assert_called_once_with(filter=TaskFilter.COMPLETED)
+        assert "completed" in capsys.readouterr().out
+
+    @patch.object(DownloadInfoCommand, "_create_client")
+    def test_info(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.download.list.return_value = make_lazy(
+            [_make_task(info_hash="abc123hash", status=TaskStatus.DOWNLOADING)]
+        )
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["download", "info", "abc123hash", "--format", "json"])
+        cmds["download"].execute(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["Hash"] == "abc123hash"
+        assert data["Name"] == "test-download.png"
+
+    @patch.object(DownloadRetryCommand, "_create_client")
+    def test_retry(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["download", "retry", "hash1"])
+        cmds["download"].execute(args)
+
+        mock_client.download.retry.assert_called_once_with("hash1")
+        output = capsys.readouterr().out
+        assert "hash1" in output

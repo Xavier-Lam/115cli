@@ -64,8 +64,11 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 # Cloud download (offline download)
 115cli download quota
 115cli download list
+115cli download list --filter completed
 115cli download add "https://example.com/file.mp4"
 115cli download delete <info_hash>
+115cli download retry <info_hash>
+115cli download clear --filter failed
 ```
 
 > **Note:** Creating cloud download tasks may trigger a captcha challenge. This is currently not supported by the client.
@@ -125,7 +128,6 @@ tasks = client.download.list()
 
 The project aims to cover the core features of 115 cloud storage. Planned additions include:
 
-- **Cloud download management:** Full management of offline download tasks including captcha support.
 - **Multi-threaded download:** Multi-thread acceleration for the `115cli fetch` command.
 - **Recycle bin management:** List, restore, and permanently delete items from the recycle bin.
 - **Mobile phone authentication:** SMS-based login in addition to cookie auth.

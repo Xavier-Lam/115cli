@@ -64,8 +64,11 @@ pip install 115cli
 # 离线下载
 115cli download quota
 115cli download list
+115cli download list --filter completed
 115cli download add "https://example.com/file.mp4"
 115cli download delete <info_hash>
+115cli download retry <info_hash>
+115cli download clear --filter failed
 ```
 
 > 注意: 某些创建云下载任务的操作可能会触发图形验证码, 目前客户端不支持处理验证码.
@@ -123,7 +126,6 @@ tasks = client.download.list()
 
 项目仍在早期,计划包括但不限于:
 
-- 更完善的云下载管理 (包括验证码处理)
 - 多线程下载加速
 - 回收站管理
 - 手机验证码登录 (补充 cookie 登录)
