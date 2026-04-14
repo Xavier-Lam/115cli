@@ -1,6 +1,6 @@
 __title__ = "115cli"
 __description__ = "An unofficial CLI tool and higher-level Python API client for 115.com cloud storage service"
 __url__ = "https://github.com/Xavier-Lam/115cli"
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "Xavier-Lam"
 __author_email__ = "xavierlam7@hotmail.com"

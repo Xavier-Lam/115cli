@@ -80,7 +80,7 @@ class TestDownloadAddAndDelete:
     def test_add_url_with_nonexistent_dest(self):
         client = make_client()
         # id=0 signals the destination directory does not exist
-        client._api.fs_dir_getid.return_value = {"state": True, "id": 0}
+        client.download._api.fs_dir_getid.return_value = {"state": True, "id": 0}
         with pytest.raises(FileNotFoundError):
             client.download.add_url(
                 "http://example.com/file.zip", dest_dir="/nonexistent"

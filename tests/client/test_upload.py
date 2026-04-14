@@ -47,18 +47,19 @@ class TestInstantUpload:
         """WebAPIClient with fully mocked API - makes no actual network requests."""
         with patch("cli115.client.webapi.P115Client"):
             client = webapi.WebAPIClient(MagicMock())
-        client._api = MagicMock()
+        mock_api = MagicMock()
+        client._file._api = mock_api
         # stat raises FileNotFoundError so _upload proceeds past the duplicate check
         client.file.stat = MagicMock(side_effect=FileNotFoundError("path not found"))
         # parent directory always resolves to a fake dir ID
-        client._resolve_dir_id = MagicMock(return_value="1234")
+        client.file._resolve_dir_id = MagicMock(return_value="1234")
         return client
 
     def test_instant_upload_success(self, api_client, root_dir):
         path = f"{root_dir.path}/instant.bin"
         file = io.BytesIO(self._INSTANT_CONTENT)
         with unittest.mock.patch.object(
-            api_client._api, "upload_file_sample"
+            api_client.file._api, "upload_file_sample"
         ) as mock_sample:
             result = api_client.file.upload(path, file)
         assert isinstance(result, File)
@@ -70,31 +71,33 @@ class TestInstantUpload:
 
     def test_instant_only_raises(self, mock_client):
         file = io.BytesIO(self._INSTANT_CONTENT)
-        mock_client._api.upload_file_init.return_value = {"reuse": 0}
+        mock_client.file._api.upload_file_init.return_value = {"reuse": 0}
         with pytest.raises(InstantUploadNotAvailableError):
             # _INSTANT_CONTENT is 4 MB; a 4 MB threshold forces instant-only mode
             mock_client.file.upload("/remote/f.bin", file, instant_only=4 * 1024 * 1024)
 
     def test_small_file_skips_instant_upload(self, mock_client):
         file = io.BytesIO(b"small content")
-        mock_client._api.upload_file_sample.return_value = self._fake_upload_response(
-            "f.bin", "sha1", len(b"small content")
+        mock_client.file._api.upload_file_sample.return_value = (
+            self._fake_upload_response("f.bin", "sha1", len(b"small content"))
         )
 
         mock_client.file.upload("/remote/f.bin", file)
 
-        mock_client._api.upload_file_init.assert_not_called()
+        mock_client.file._api.upload_file_init.assert_not_called()
 
     def test_nonexist_fallback(self, mock_client):
         file = io.BytesIO(self._INSTANT_CONTENT)
-        mock_client._api.upload_file_init.return_value = {"reuse": 0}
-        mock_client._api.upload_file_sample.return_value = self._fake_upload_response(
-            "f.bin", self._INSTANT_SHA1, len(self._INSTANT_CONTENT)
+        mock_client.file._api.upload_file_init.return_value = {"reuse": 0}
+        mock_client.file._api.upload_file_sample.return_value = (
+            self._fake_upload_response(
+                "f.bin", self._INSTANT_SHA1, len(self._INSTANT_CONTENT)
+            )
         )
 
         result = mock_client.file.upload("/remote/f.bin", file)
 
-        mock_client._api.upload_file_sample.assert_called_once()
+        mock_client.file._api.upload_file_sample.assert_called_once()
 
         assert isinstance(result, File)
         assert result.sha1.upper() == self._INSTANT_SHA1
@@ -102,9 +105,11 @@ class TestInstantUpload:
     def test_exception_fallback(self, mock_client):
         file = io.BytesIO(self._INSTANT_CONTENT)
         err_msg = "simulated instant upload failure"
-        mock_client._api.upload_file_init.side_effect = RuntimeError(err_msg)
-        mock_client._api.upload_file_sample.return_value = self._fake_upload_response(
-            "f.bin", self._INSTANT_SHA1, len(self._INSTANT_CONTENT)
+        mock_client.file._api.upload_file_init.side_effect = RuntimeError(err_msg)
+        mock_client.file._api.upload_file_sample.return_value = (
+            self._fake_upload_response(
+                "f.bin", self._INSTANT_SHA1, len(self._INSTANT_CONTENT)
+            )
         )
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -113,7 +118,7 @@ class TestInstantUpload:
         assert result.sha1.upper() == self._INSTANT_SHA1
         assert any("instant upload failed" in str(w.message) for w in caught)
         assert any(err_msg in str(w.message) for w in caught)
-        mock_client._api.upload_file_sample.assert_called_once()
+        mock_client.file._api.upload_file_sample.assert_called_once()
 
     @staticmethod
     def _fake_upload_response(name: str, sha1: str, size: int) -> dict:

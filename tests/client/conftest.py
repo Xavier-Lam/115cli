@@ -25,7 +25,10 @@ def make_client():
     """Create a WebAPIClient with a fully mocked P115 API backend."""
     with patch("cli115.client.webapi.P115Client"):
         client = webapi.WebAPIClient(MagicMock())
-    client._api = MagicMock()
+    mock_api = MagicMock()
+    client._account._api = mock_api
+    client._file._api = mock_api
+    client._download._api = mock_api
     return client
 
 
@@ -141,18 +144,22 @@ def _patch_client_registry(client: Client) -> None:
     client.register_entry = register_entry
     client.unregister_entry = unregister_entry
 
-    _orig_resolve_dir_id = client._resolve_dir_id
+    _orig_file_resolve_dir_id = client.file._resolve_dir_id
+    _orig_download_resolve_dir_id = client.download._resolve_dir_id
     _orig_file_id = client.file.id
     _orig_resolve_entry = client.file._resolve_entry
 
-    def _resolve_dir_id_with_registry(path):
-        if isinstance(path, Directory):
-            return path.id
-        if isinstance(path, str):
-            key = normalize_path(path)
-            if key in _by_path:
-                return _by_path[key].id
-        return _orig_resolve_dir_id(path)
+    def _make_resolve_dir_id_with_registry(orig):
+        def _resolve_dir_id_with_registry(path):
+            if isinstance(path, Directory):
+                return path.id
+            if isinstance(path, str):
+                key = normalize_path(path)
+                if key in _by_path:
+                    return _by_path[key].id
+            return orig(path)
+
+        return _resolve_dir_id_with_registry
 
     def _file_id_with_registry(file_id):
         if file_id in _by_id:
@@ -166,7 +173,12 @@ def _patch_client_registry(client: Client) -> None:
                 return _by_path[key]
         return _orig_resolve_entry(path)
 
-    client._resolve_dir_id = _resolve_dir_id_with_registry
+    client.file._resolve_dir_id = _make_resolve_dir_id_with_registry(
+        _orig_file_resolve_dir_id
+    )
+    client.download._resolve_dir_id = _make_resolve_dir_id_with_registry(
+        _orig_download_resolve_dir_id
+    )
     client.file.id = _file_id_with_registry
     client.file._resolve_entry = _resolve_entry_with_registry
 

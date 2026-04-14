@@ -33,8 +33,8 @@ class TestCreateDirectory:
 
     def test_create_existing_directory_raises(self):
         client = make_client()
-        client._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
-        client._api.fs_mkdir.return_value = {
+        client.file._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
+        client.file._api.fs_mkdir.return_value = {
             "state": False,
             "errno": 20004,
             "error": "directory already exists",
@@ -47,8 +47,8 @@ class TestCreateDirectory:
         # via stat rather than raising FileExistsError.
         client = make_client()
         existing = make_dir(name="existing", id="999", path="/parent/existing")
-        client._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
-        client._api.fs_mkdir.return_value = {
+        client.file._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
+        client.file._api.fs_mkdir.return_value = {
             "state": False,
             "errno": 20004,
             "error": "directory already exists",

@@ -27,7 +27,7 @@ class TestId:
 
     def test_id_nonexistent(self):
         client = make_client()
-        client._api.fs_file.return_value = {"state": True, "data": []}
+        client.file._api.fs_file.return_value = {"state": True, "data": []}
         with pytest.raises(FileNotFoundError):
             client.file.id("999999999999999")
 
@@ -56,8 +56,8 @@ class TestStat:
 
     def test_stat_nonexistent(self):
         client = make_client()
-        client._api.fs_dir_getid.return_value = {"state": True, "id": "100"}
-        client._api.fs_files.return_value = {"state": True, "count": 0, "data": []}
+        client.file._api.fs_dir_getid.return_value = {"state": True, "id": "100"}
+        client.file._api.fs_files.return_value = {"state": True, "count": 0, "data": []}
         with pytest.raises(FileNotFoundError):
             client.file.stat("/parent/nonexistent")
 
@@ -221,7 +221,7 @@ class TestFind:
     def test_find_with_nonexistent_path(self):
         client = make_client()
         # id=0 signals the path does not exist
-        client._api.fs_dir_getid.return_value = {"state": True, "id": 0}
+        client.file._api.fs_dir_getid.return_value = {"state": True, "id": 0}
         with pytest.raises(FileNotFoundError):
             len(client.file.find("query", path="/nonexistent"))
 

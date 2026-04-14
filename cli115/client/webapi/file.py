@@ -1,42 +1,30 @@
-"""WebAPI client implementation backed by p115client."""
-
 from __future__ import annotations
 
 import os
 import warnings
-from datetime import datetime
 from typing import BinaryIO, Callable
 
-from cli115.api.web.p115client import check_response, P115Client
-from cli115.auth import Auth
+from cli115.api.web.p115client import check_response
 from cli115.client.base import (
-    AccountClient,
-    Client,
-    DEFAULT_PAGE_SIZE,
-    DownloadClient,
     FileClient,
+    DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
     RemoteFile,
 )
 from cli115.client.lazy import new_lazy_cls
 from cli115.client.models import (
-    AccountInfo,
-    CloudTask,
     Directory,
     DownloadUrl,
-    DownloadQuota,
     File,
     FileSystemEntry,
     Pagination,
     Progress,
     SortField,
     SortOrder,
-    TaskFilter,
-    TaskStatus,
-    Usage,
 )
 from cli115.client.utils import parse_item, parse_ts
+from cli115.client.webapi.base import BaseClient
 from cli115.exceptions import InstantUploadNotAvailableError
 from cli115.helpers import normalize_path, sha1_file, join_path
 
@@ -47,202 +35,12 @@ DEFAULT_USER_AGENT = (
 )
 
 
-class WebAPIClient(Client):
-    """High-level 115 client backed by the web API.
-
-    Although it is named ``WebAPIClient``, a few of its APIs may come from
-    other sources, such as the mobile phone app.
-    """
-
-    def __init__(self, auth: Auth):
-        self._auth = auth
-        self._api = P115Client(auth.get_cookies())
-        self._account = WebAPIAccountClient(self)
-        self._file = WebAPIFileClient(self)
-        self._download = WebAPIDownloadClient(self)
-
-    @property
-    def account(self) -> AccountClient:
-        return self._account
-
-    @property
-    def file(self) -> FileClient:
-        return self._file
-
-    @property
-    def download(self) -> DownloadClient:
-        return self._download
-
-    def _resolve_dir_id(self, path: str | Directory) -> str:
-        if isinstance(path, Directory):
-            return path.id
-        path = normalize_path(path)
-        if path == "/":
-            return "0"
-        resp = self._api.fs_dir_getid({"path": path})
-        resp = check_response(resp)
-        dir_id = str(resp["id"])
-        if dir_id == "0":
-            # the api returns success with id=0 for non-existent paths
-            raise FileNotFoundError("directory not found: %s" % path)
-        return dir_id
-
-
-class WebAPIAccountClient(AccountClient):
-
-    def __init__(self, client: WebAPIClient):
-        self._client = client
-
-    def info(self) -> AccountInfo:
-        resp = self._client._api.user_my()
-        check_response(resp)
-        data = resp.get("data", {})
-        expire_ts = data.get("expire")
-        expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
-        return AccountInfo(
-            user_name=data.get("user_name", ""),
-            user_id=int(data.get("user_id", 0)),
-            vip=bool(data.get("vip", 0)),
-            expire=expire,
-        )
-
-    def usage(self) -> Usage:
-        resp = self._client._api.fs_index_info()
-        check_response(resp)
-        space = resp.get("data", {}).get("space_info", {})
-        return Usage(
-            total=int(space.get("all_total", {}).get("size", 0)),
-            used=int(space.get("all_use", {}).get("size", 0)),
-            remaining=int(space.get("all_remain", {}).get("size", 0)),
-        )
-
-
-class WebAPIDownloadClient(DownloadClient):
-
-    def __init__(self, client: WebAPIClient):
-        self._client = client
-
-    def quota(self) -> DownloadQuota:
-        resp = self._client._api.offline_quota_info()
-        resp = check_response(resp)
-        return DownloadQuota(
-            quota=int(resp.get("quota", 0)),
-            total=int(resp.get("total", 0)),
-        )
-
-    def _list(
-        self, page: int = 1, page_size: int = 30, filter: TaskFilter | None = None
-    ) -> tuple[list[CloudTask], Pagination]:
-        payload = {"page": page, "page_size": page_size}
-        if filter is not None:
-            payload["stat"] = {
-                TaskFilter.COMPLETED: 11,
-                TaskFilter.FAILED: 9,
-                TaskFilter.RUNNING: 12,
-            }[filter]
-        resp = self._client._api.offline_list(payload)
-        resp = check_response(resp)
-        tasks = [self._parse_task(t) for t in resp.get("tasks") or []]
-        page_size = int(resp.get("page_row", resp.get("page_size", page_size)))
-        pagination = Pagination(
-            total=int(resp.get("count", 0)),
-            offset=(int(resp.get("page", 1)) - 1) * page_size,
-            limit=page_size,
-        )
-        return tasks, pagination
-
-    def add_url(
-        self, url: str, *, dest_dir: str | Directory | None = None
-    ) -> CloudTask:
-        payload: dict = {"url": url}
-        if dest_dir is not None:
-            payload["wp_path_id"] = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.offline_add_url(payload)
-        resp = check_response(resp)
-        data = resp.get("data", {})
-        info_hash = data.get("info_hash", "")
-        return self._find_task(info_hash)
-
-    def add_urls(
-        self, *urls: str, dest_dir: str | Directory | None = None
-    ) -> list[CloudTask]:
-        if dest_dir is not None:
-            wp_path_id = self._client._resolve_dir_id(dest_dir)
-            resp = self._client._api.offline_add_urls(
-                list(urls), {"wp_path_id": wp_path_id}
-            )
-        else:
-            resp = self._client._api.offline_add_urls(list(urls))
-        resp = check_response(resp)
-        data = resp.get("data", {})
-        result = data.get("result", [])
-        hashes = [r.get("info_hash", "") for r in result]
-        tasks_map = self._fetch_tasks_map()
-        return [tasks_map[h] for h in hashes if h in tasks_map]
-
-    def delete(self, *task_hashes: str) -> None:
-        resp = self._client._api.offline_remove(list(task_hashes))
-        check_response(resp)
-
-    def clear(self, filter: TaskFilter | None = None) -> None:
-        _flag_map: dict[TaskFilter | None, int] = {
-            None: 1,
-            TaskFilter.COMPLETED: 0,
-            TaskFilter.FAILED: 2,
-            TaskFilter.RUNNING: 3,
-        }
-        resp = self._client._api.offline_clear({"flag": _flag_map[filter]})
-        check_response(resp)
-
-    def retry(self, info_hash: str) -> None:
-        resp = self._client._api.offline_restart(info_hash)
-        check_response(resp)
-
-    def _find_task(self, info_hash: str) -> CloudTask:
-        """Find a task by info_hash in the task list."""
-        tasks_map = self._fetch_tasks_map()
-        if info_hash in tasks_map:
-            return tasks_map[info_hash]
-        # Return a minimal CloudTask if not found in list
-        return CloudTask(
-            info_hash=info_hash,
-            name="",
-            size=0,
-            status=TaskStatus.WAITING,
-            percent_done=0,
-            url="",
-        )
-
-    def _fetch_tasks_map(self) -> dict[str, CloudTask]:
-        """Fetch the first page of tasks and return a dict keyed by info_hash."""
-        tasks, _ = self._list(page=1)
-        return {t.info_hash: t for t in tasks}
-
-    def _parse_task(self, task: dict) -> CloudTask:
-        """Convert a raw task dict from the API into a CloudTask."""
-        return CloudTask(
-            info_hash=task.get("info_hash", ""),
-            name=task.get("name", ""),
-            size=int(task.get("size", 0)),
-            status=TaskStatus(int(task.get("status", 0))),
-            percent_done=float(task.get("percentDone", 0)),
-            url=task.get("url", ""),
-            file_id=str(task.get("file_id", "") or ""),
-            pick_code=task.get("pick_code", "") or "",
-            folder_id=str(task.get("wp_path_id", "") or ""),
-            add_time=parse_ts(task.get("add_time")),
-        )
-
-
-class WebAPIFileClient(FileClient):
-
-    def __init__(self, client: WebAPIClient):
-        self._client = client
+class WebAPIFileClient(FileClient, BaseClient):
 
     # -- public API --
 
     def id(self, file_id: str) -> Directory | File:
-        resp = self._client._api.fs_file(file_id)
+        resp = self._api.fs_file(file_id)
         resp = check_response(resp)
         data = resp.get("data", [])
         if not data:
@@ -267,10 +65,10 @@ class WebAPIFileClient(FileClient):
             path = path.path
         else:
             path = normalize_path(path)
-            dir_id = self._client._resolve_dir_id(path)
+            dir_id = self._resolve_dir_id(path)
         # both fs_order_set and fs_files need to be called to get correct
         # sorting results, otherwise the sorting parameters are ignored
-        self._client._api.fs_order_set(
+        self._api.fs_order_set(
             {
                 "file_id": dir_id,
                 "user_order": sort.value,
@@ -278,7 +76,7 @@ class WebAPIFileClient(FileClient):
                 "fc_mix": 1,
             }
         )
-        resp = self._client._api.fs_files(
+        resp = self._api.fs_files(
             {
                 "cid": dir_id,
                 "offset": offset,
@@ -319,9 +117,9 @@ class WebAPIFileClient(FileClient):
             "limit": min(limit, MAX_PAGE_SIZE),
         }
         if path is not None:
-            payload["cid"] = self._client._resolve_dir_id(path)
+            payload["cid"] = self._resolve_dir_id(path)
 
-        resp = self._client._api.fs_search(payload)
+        resp = self._api.fs_search(payload)
         resp = check_response(resp)
 
         items: list[Directory | File] = []
@@ -342,7 +140,7 @@ class WebAPIFileClient(FileClient):
         name = os.path.basename(path)
 
         try:
-            pid = self._client._resolve_dir_id(dirname)
+            pid = self._resolve_dir_id(dirname)
         except FileNotFoundError:
             if not parents:
                 raise
@@ -350,7 +148,7 @@ class WebAPIFileClient(FileClient):
             pid = parent_dir.id
 
         try:
-            resp = self._client._api.fs_mkdir(name, pid=pid)
+            resp = self._api.fs_mkdir(name, pid=pid)
             resp = check_response(resp)
         except FileExistsError:
             if parents:
@@ -373,7 +171,7 @@ class WebAPIFileClient(FileClient):
             items = self.list(path)
             if len(items) > 0:
                 raise FileExistsError(f"directory is not empty: {path}")
-        resp = self._client._api.fs_delete(entry.id)
+        resp = self._api.fs_delete(entry.id)
         check_response(resp)
 
     def batch_delete(
@@ -382,40 +180,40 @@ class WebAPIFileClient(FileClient):
         if recursive:
             raise NotImplementedError("recursive batch delete is not yet supported")
         ids = [self._resolve_id(p) for p in paths]
-        resp = self._client._api.fs_delete(ids)
+        resp = self._api.fs_delete(ids)
         check_response(resp)
 
     def rename(self, path: str | FileSystemEntry, name: str) -> None:
         file_id = self._resolve_id(path)
-        resp = self._client._api.fs_rename((file_id, name))
+        resp = self._api.fs_rename((file_id, name))
         check_response(resp)
 
     def move(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
         src_id = self._resolve_id(src)
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_move(src_id, pid=dest_id)
+        dest_id = self._resolve_dir_id(dest_dir)
+        resp = self._api.fs_move(src_id, pid=dest_id)
         check_response(resp)
 
     def batch_move(
         self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
     ) -> None:
         src_ids = [self._resolve_id(s) for s in srcs]
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_move(src_ids, pid=dest_id)
+        dest_id = self._resolve_dir_id(dest_dir)
+        resp = self._api.fs_move(src_ids, pid=dest_id)
         check_response(resp)
 
     def copy(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
         src_id = self._resolve_id(src)
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_copy(src_id, pid=dest_id)
+        dest_id = self._resolve_dir_id(dest_dir)
+        resp = self._api.fs_copy(src_id, pid=dest_id)
         check_response(resp)
 
     def batch_copy(
         self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
     ) -> None:
         src_ids = [self._resolve_id(s) for s in srcs]
-        dest_id = self._client._resolve_dir_id(dest_dir)
-        resp = self._client._api.fs_copy(src_ids, pid=dest_id)
+        dest_id = self._resolve_dir_id(dest_dir)
+        resp = self._api.fs_copy(src_ids, pid=dest_id)
         check_response(resp)
 
     def _upload(
@@ -438,7 +236,7 @@ class WebAPIFileClient(FileClient):
 
         parent_path = os.path.dirname(path)
         filename = os.path.basename(path)
-        dir_id = self._client._resolve_dir_id(parent_path)
+        dir_id = self._resolve_dir_id(parent_path)
 
         sha1, file_size = sha1_file(file)
 
@@ -474,7 +272,7 @@ class WebAPIFileClient(FileClient):
         if isinstance(file, RemoteFile):
             file.set_stream(True)  # use streaming upload for RemoteFile
 
-        resp = self._client._api.upload_file_sample(
+        resp = self._api.upload_file_sample(
             file,
             pid=dir_id,
             filename=filename,
@@ -514,7 +312,7 @@ class WebAPIFileClient(FileClient):
             file.seek(start)
             return file.read(end - start + 1)
 
-        resp = self._client._api.upload_file_init(
+        resp = self._api.upload_file_init(
             filename=filename,
             filesize=file_size,
             filesha1=sha1,
@@ -530,10 +328,8 @@ class WebAPIFileClient(FileClient):
             raise IsADirectoryError("cannot get download info for a directory")
 
         ua = user_agent or DEFAULT_USER_AGENT
-        p115url = self._client._api.download_url(entry.pickcode, user_agent=ua)
-        cookie_str = "; ".join(
-            f"{k}={m.value}" for k, m in self._client._api.cookies.items()
-        )
+        p115url = self._api.download_url(entry.pickcode, user_agent=ua)
+        cookie_str = "; ".join(f"{k}={m.value}" for k, m in self._api.cookies.items())
         return DownloadUrl(
             url=str(p115url),
             file_name=entry.name,
@@ -568,10 +364,10 @@ class WebAPIFileClient(FileClient):
             )
         dirname = os.path.dirname(path)
         name = os.path.basename(path)
-        pid = self._client._resolve_dir_id(dirname)
+        pid = self._resolve_dir_id(dirname)
         offset = 0
         while True:
-            resp = self._client._api.fs_files(
+            resp = self._api.fs_files(
                 {
                     "cid": pid,
                     "aid": 1,
