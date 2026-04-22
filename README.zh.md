@@ -67,6 +67,7 @@ pip install 115cli
 115cli download list --filter completed
 115cli download add "https://example.com/file.mp4"
 115cli download delete <info_hash>
+115cli download status <info_hash>
 115cli download retry <info_hash>
 115cli download clear --filter failed
 ```
@@ -103,7 +104,7 @@ for entry in entries:
 	print(entry.name, entry.id)
 
 # 文件信息
-info = client.file.info("/path/to/file.txt")
+info = client.file.stat("/path/to/file.txt")
 print(info.name, info.size, info.sha1)
 
 # 获取下载信息

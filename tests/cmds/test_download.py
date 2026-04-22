@@ -13,7 +13,7 @@ from cli115.cmds.download import (
     DownloadAddCommand,
     DownloadClearCommand,
     DownloadDeleteCommand,
-    DownloadInfoCommand,
+    DownloadStatusCommand,
     DownloadListCommand,
     DownloadQuotaCommand,
     DownloadRetryCommand,
@@ -196,7 +196,7 @@ class TestDownloadCommand:
         mock_client.download.clear.assert_called_once_with(filter=TaskFilter.COMPLETED)
         assert "completed" in capsys.readouterr().out
 
-    @patch.object(DownloadInfoCommand, "_create_client")
+    @patch.object(DownloadStatusCommand, "_create_client")
     def test_info(self, mock_create, capsys):
         mock_client = MagicMock()
         mock_client.download.list.return_value = make_lazy(
@@ -205,7 +205,9 @@ class TestDownloadCommand:
         mock_create.return_value = mock_client
 
         parser, cmds = _build_parser()
-        args = parser.parse_args(["download", "info", "abc123hash", "--format", "json"])
+        args = parser.parse_args(
+            ["download", "status", "abc123hash", "--format", "json"]
+        )
         cmds["download"].execute(args)
 
         data = json.loads(capsys.readouterr().out)

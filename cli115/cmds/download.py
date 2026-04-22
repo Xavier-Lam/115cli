@@ -136,7 +136,7 @@ class DownloadClearCommand(BaseCommand):
             print("Cleared all tasks")
 
 
-class DownloadInfoCommand(PairFormatterMixin, BaseCommand):
+class DownloadStatusCommand(PairFormatterMixin, BaseCommand):
     """Show full information of a cloud download task."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
@@ -180,6 +180,6 @@ class DownloadCommand(MultiCommand):
         ("add", DownloadAddCommand),
         ("delete", DownloadDeleteCommand),
         ("clear", DownloadClearCommand),
-        ("info", DownloadInfoCommand),
+        ("status", DownloadStatusCommand),
         ("retry", DownloadRetryCommand),
     ]
