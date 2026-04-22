@@ -24,6 +24,7 @@ from cli115.cmds.logout import LogoutCommand
 from cli115.cmds.ls import LsCommand
 from cli115.cmds.mkdir import MkdirCommand
 from cli115.cmds.mv import MvCommand
+from cli115.cmds.rename import RenameCommand
 from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
@@ -43,6 +44,7 @@ COMMANDS = OrderedDict(
         ("find", FindCommand),
         ("cp", CpCommand),
         ("mv", MvCommand),
+        ("rename", RenameCommand),
         ("rm", RmCommand),
         ("mkdir", MkdirCommand),
         ("upload", UploadCommand),

@@ -39,6 +39,7 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 115cli mkdir /new-folder
 115cli cp /src/file.txt /dst/
 115cli mv /old/path /new/path
+115cli rename /old/path/file.txt new-file.txt
 115cli rm /path/to/file
 115cli rm -r /path/to/dir
 115cli find /search/path keyword

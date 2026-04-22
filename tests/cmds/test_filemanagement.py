@@ -21,6 +21,7 @@ from cli115.cmds.id import IdCommand
 from cli115.cmds.ls import LsCommand
 from cli115.cmds.mkdir import MkdirCommand
 from cli115.cmds.mv import MvCommand
+from cli115.cmds.rename import RenameCommand
 from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
@@ -399,6 +400,20 @@ class TestMvCommand:
         cmds["mv"].execute(args)
 
         mock_client.file.batch_move.assert_called_once_with("/a", "/b", dest_dir="/dst")
+
+
+class TestRenameCommand:
+    @patch.object(RenameCommand, "_create_client")
+    def test_rename(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["rename", "/src/file.txt", "new-file.txt"])
+        cmds["rename"].execute(args)
+
+        mock_client.file.rename.assert_called_once_with("/src/file.txt", "new-file.txt")
+        assert "Renamed: /src/file.txt -> new-file.txt" in capsys.readouterr().out
 
 
 class TestRmCommand:

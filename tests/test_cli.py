@@ -63,6 +63,7 @@ class TestBuildParser:
             "ls",
             "mkdir",
             "mv",
+            "rename",
             "rm",
             "stat",
             "upload",
