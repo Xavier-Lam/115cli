@@ -23,7 +23,7 @@ from cli115.cmds.mv import MvCommand
 from cli115.cmds.rename import RenameCommand
 from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
-from cli115.cmds.upload import UploadCommand
+from cli115.cmds.upload import UploadCommand, UploadProgress
 from cli115.cmds.url import UrlCommand
 from cli115.credentials import CredentialManager
 from cli115.exceptions import CommandLineError
@@ -542,7 +542,7 @@ class TestUploadCommand:
 
         parser, cmds = _build_parser()
         args = parser.parse_args(
-            ["upload", "--format", "json", "/local/file.txt", "/remote/file.txt"]
+            ["upload", "-s", "--format", "json", "/local/file.txt", "/remote/file.txt"]
         )
         cmds["upload"].execute(args)
 
@@ -611,6 +611,60 @@ class TestUploadCommand:
         args = parser.parse_args(["upload", "/local/dir", "/remote/file.txt"])
         with pytest.raises(FileExistsError, match="cannot upload directory"):
             cmds["upload"].execute(args)
+
+    @patch("cli115.cmds.upload.Uploader")
+    @patch.object(UploadCommand, "_create_client")
+    def test_dry_run_passed_to_uploader(self, mock_create, mock_uploader_cls):
+        mock_client = MagicMock()
+        mock_create.return_value = mock_client
+        mock_uploader_cls.return_value.upload.return_value = None
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            ["upload", "--dry-run", "/local/file.txt", "/remote/file.txt"]
+        )
+        cmds["upload"].execute(args)
+
+        mock_uploader_cls.assert_called_once_with(mock_client, dry_run=True)
+
+    @patch.object(UploadCommand, "_create_client")
+    def test_plan_flag_shows_plan(self, mock_create, tmp_path, capsys):
+        local_file = tmp_path / "file.txt"
+        local_file.write_text("content")
+
+        mock_client = MagicMock()
+        mock_client.file.stat.side_effect = FileNotFoundError("not found")
+        mock_client.file.upload.return_value = None
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            ["upload", "--plan", str(local_file), "/remote/file.txt"]
+        )
+        cmds["upload"].execute(args)
+
+        output = capsys.readouterr().out
+        assert str(local_file) in output
+        assert "/remote/file.txt" in output
+
+    @patch.object(UploadCommand, "_create_client")
+    def test_dry_run_flag_shows_plan(self, mock_create, tmp_path, capsys):
+        local_file = tmp_path / "file.txt"
+        local_file.write_text("content")
+
+        mock_client = MagicMock()
+        mock_client.file.stat.side_effect = FileNotFoundError("not found")
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            ["upload", "--dry-run", str(local_file), "/remote/file.txt"]
+        )
+        cmds["upload"].execute(args)
+
+        output = capsys.readouterr().out
+        assert str(local_file) in output
+        assert "/remote/file.txt" in output
 
 
 class TestUrlCommand:

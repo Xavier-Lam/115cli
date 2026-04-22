@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
+from threading import Event, Thread
+import time
+
+from tqdm import tqdm
 
 from cli115.cmds.base import BaseCommand
-from cli115.cmds.formatter import format_entry, PairFormatterMixin
+from cli115.cmds.formatter import PairFormatterMixin, format_entry, format_size
+from cli115.exceptions import CommandLineError
 from cli115.helpers import parse_size
-from cli115.uploader import Uploader
+from cli115.uploader import UploadEntry, Uploader
 
 
 class UploadCommand(PairFormatterMixin, BaseCommand):
@@ -17,6 +23,12 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         super().register(parser)
         parser.add_argument("local_path", help="local file or directory path")
         parser.add_argument("remote_path", help="remote destination path")
+        parser.add_argument(
+            "--plan",
+            action="store_true",
+            default=False,
+            help="Show planned files before uploading",
+        )
         parser.add_argument(
             "--instant-only",
             type=parse_size,
@@ -54,15 +66,208 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
             default=False,
             help="Only show files that would be uploaded without uploading",
         )
+        parser.add_argument(
+            "-s",
+            "--silent",
+            action="store_true",
+            default=False,
+            help="Do not report progress, only print the final result",
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
-        uploader = Uploader(self._create_client())
-        result = uploader.upload(
-            args.local_path,
-            args.remote_path,
-            instant_only=args.instant_only,
-            include=args.include,
-            exclude=args.exclude,
-            dry_run=args.dry_run,
+        uploader = Uploader(self._create_client(), dry_run=args.dry_run)
+
+        done = Event()
+        state: dict[str, object] = {}
+
+        def worker() -> None:
+            try:
+                state["result"] = uploader.upload(
+                    args.local_path,
+                    args.remote_path,
+                    instant_only=args.instant_only,
+                    include=args.include,
+                    exclude=args.exclude,
+                )
+            except BaseException as exc:
+                state["error"] = exc
+            finally:
+                done.set()
+
+        with UploadProgress(
+            uploader,
+            show_plan=args.plan or args.dry_run,
+            show_progress=not args.silent and not args.dry_run,
+        ):
+            Thread(target=worker, daemon=True, name="upload-worker").start()
+
+            try:
+                while not done.wait(timeout=0.1):
+                    pass
+            except KeyboardInterrupt as exc:
+                raise CommandLineError("upload cancelled by user") from exc
+
+        error = state.get("error")
+        if isinstance(error, BaseException):
+            raise error
+        if state.get("result"):
+            self.output(format_entry(state["result"]), args)
+
+
+class UploadProgress:
+    def __init__(
+        self,
+        uploader: Uploader,
+        *,
+        show_plan: bool = False,
+        show_progress: bool = True,
+    ):
+        self.uploader = uploader
+        self.show_plan = show_plan
+        self.show_progress = show_progress
+
+        self.current_text: tqdm | None = None
+        self.current_bar: tqdm | None = None
+        self.overall_text: tqdm | None = None
+        self.overall_bar: tqdm | None = None
+
+        self.started_at: float | None = None
+        self.ended_at: float | None = None
+        self.total_files = 0
+        self.total_size = 0
+        self.completed_files = 0
+        self.completed_bytes = 0
+        self.instant_count = 0
+
+    def init(self):
+        self.uploader.on_entry_added.connect(self.on_added)
+        self.started_at = time.monotonic()
+
+    def close(self):
+        self.ended_at = time.monotonic()
+        if self.overall_bar:
+            self.current_text.close()
+            self.current_bar.close()
+            self.overall_text.close()
+            self.overall_bar.close()
+            print()  # ensure progress bars are cleared before final output
+
+    def report(self):
+        if self.started_at is None or self.ended_at is None:
+            return
+
+        self.ended_at = time.monotonic()
+        elapsed = self.ended_at - self.started_at
+        tqdm.write(
+            "Upload finished in {0:.1f}s: {1} total, {2} of {3} files instantly uploaded".format(
+                elapsed,
+                format_size(self.total_size),
+                self.instant_count,
+                self.total_files,
+            )
         )
-        self.output(format_entry(result), args)
+
+    def on_added(self, sender, **kw):
+        entries: list[UploadEntry] = kw["entries"]
+        if self.show_plan:
+            for idx, entry in enumerate(entries):
+                print(
+                    "{0}. {1} -> {2} ({3})".format(
+                        idx,
+                        os.fspath(entry.local_path),
+                        entry.remote_path,
+                        format_size(entry.size),
+                    )
+                )
+
+        if not self.show_progress:
+            return
+
+        self.total_files = len(entries)
+        self.total_size = max(sum(e.size for e in entries), 1)
+        self.create_progress_bars()
+
+        for entry in entries:
+            self.connect_update_listener(entry)
+            self.connect_complete_listener(entry)
+
+    def connect_update_listener(self, entry: UploadEntry):
+        def listener(sender, **kw) -> None:
+            self.current_text.set_description_str(entry.local_path)
+            self.current_text.refresh()
+
+            self.current_bar.total = max(entry.size, 1)
+            self.current_bar.n = 0
+            if entry.status.progress is not None:
+                self.current_bar.n = entry.status.progress.completed_bytes
+                if not entry.status.progress.is_completed():
+                    self.overall_bar.n = self.completed_bytes + self.current_bar.n
+            self.current_bar.refresh()
+            self.overall_bar.refresh()
+
+        entry.status.on_update.connect(listener, weak=False)
+
+    def connect_complete_listener(self, entry: UploadEntry):
+        def listener(sender, **kw) -> None:
+            self.completed_files += 1
+            if entry.status.is_instant_uploaded:
+                self.instant_count += 1
+
+            self.overall_text.set_description_str(
+                f"{self.completed_files}/{self.total_files}"
+            )
+            self.overall_text.refresh()
+
+            self.completed_bytes += entry.size
+            self.overall_bar.n = self.completed_bytes
+            self.overall_bar.refresh()
+
+        entry.status.on_complete.connect(listener, weak=False)
+
+    def create_progress_bars(self):
+        _PROGRESS_BAR_FORMAT = (
+            "{percentage:3.0f}%|{bar}| "
+            "{n_fmt}/{total_fmt} "
+            "[{elapsed}<{remaining}, {rate_fmt}]"
+        )
+
+        self.current_text = tqdm(
+            total=0, position=0, dynamic_ncols=True, leave=False, bar_format="{desc}"
+        )
+        self.current_bar = tqdm(
+            total=1,
+            position=1,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            dynamic_ncols=True,
+            leave=False,
+            bar_format=_PROGRESS_BAR_FORMAT,
+        )
+        self.overall_text = tqdm(
+            total=0,
+            position=2,
+            dynamic_ncols=True,
+            leave=False,
+            bar_format="{desc}",
+            desc=f"0/{self.total_files}",
+        )
+        self.overall_bar = tqdm(
+            total=self.total_size,
+            position=3,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            dynamic_ncols=True,
+            leave=False,
+            bar_format=_PROGRESS_BAR_FORMAT,
+        )
+
+    def __enter__(self):
+        self.init()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        if exc_type is None and self.show_progress:
+            self.report()
