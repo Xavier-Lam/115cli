@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from os import PathLike
-from typing import BinaryIO, Callable, Sequence
+from typing import BinaryIO, Sequence
 
 import httpx
 
@@ -17,10 +17,10 @@ from cli115.client.models import (
     File,
     FileSystemEntry,
     Pagination,
-    Progress,
     SortField,
     SortOrder,
     TaskFilter,
+    UploadStatus,
     Usage,
 )
 from cli115.client.lazy import LazyPathCollection, LazyCollection
@@ -482,7 +482,7 @@ class FileClient(ABC):
         file: str | PathLike[str] | BinaryIO,
         *,
         instant_only: int | None = None,
-        progress_callback: Callable[[Progress], object] | None = None,
+        status: UploadStatus | None = None,
     ) -> File:
         """Upload a file.
 
@@ -502,8 +502,7 @@ class FileClient(ABC):
                   :class:`~cli115.exceptions.InstantUploadNotAvailableError`
                   if the server does not have a matching copy.  Values below
                   :data:`MIN_INSTANT_UPLOAD_SIZE` are ignored.
-            progress_callback: Optional callable invoked periodically
-                  with a :class:`Progress` instance.
+            status: Optional initial upload status to set for the file.
 
         Returns:
             The uploaded File entry.
@@ -524,7 +523,7 @@ class FileClient(ABC):
                 path,
                 file,
                 instant_only=instant_only,
-                progress_callback=progress_callback,
+                status=status,
             )
         finally:
             if opened is not None:
@@ -537,7 +536,7 @@ class FileClient(ABC):
         file: BinaryIO,
         *,
         instant_only: int | None = None,
-        progress_callback: Callable[[Progress], object] | None = None,
+        status: UploadStatus | None = None,
     ) -> File:
         """Perform the actual file upload.
 

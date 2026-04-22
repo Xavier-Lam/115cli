@@ -2,12 +2,11 @@ import hashlib
 import io
 import unittest.mock
 import uuid
-import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cli115.client import File, webapi
+from cli115.client import File, UploadStatus, webapi
 from cli115.exceptions import InstantUploadNotAvailableError
 from tests.client.conftest import upload_file
 
@@ -58,13 +57,17 @@ class TestInstantUpload:
     def test_instant_upload_success(self, api_client, root_dir):
         path = f"{root_dir.path}/instant.bin"
         file = io.BytesIO(self._INSTANT_CONTENT)
+        status = UploadStatus()
         with unittest.mock.patch.object(
             api_client.file._api, "upload_file_sample"
         ) as mock_sample:
-            result = api_client.file.upload(path, file)
+            result = api_client.file.upload(path, file, status=status)
         assert isinstance(result, File)
         assert result.sha1 == self._INSTANT_SHA1
         mock_sample.assert_not_called()
+        assert status.use_instant_upload is True
+        assert status.is_instant_uploaded is True
+        assert status.instant_upload_error is None
 
         info = api_client.file.id(result.id)
         assert info.sha1 == self._INSTANT_SHA1
@@ -81,10 +84,11 @@ class TestInstantUpload:
         mock_client.file._api.upload_file_sample.return_value = (
             self._fake_upload_response("f.bin", "sha1", len(b"small content"))
         )
-
-        mock_client.file.upload("/remote/f.bin", file)
+        status = UploadStatus()
+        mock_client.file.upload("/remote/f.bin", file, status=status)
 
         mock_client.file._api.upload_file_init.assert_not_called()
+        assert status.use_instant_upload is False
 
     def test_nonexist_fallback(self, mock_client):
         file = io.BytesIO(self._INSTANT_CONTENT)
@@ -94,13 +98,15 @@ class TestInstantUpload:
                 "f.bin", self._INSTANT_SHA1, len(self._INSTANT_CONTENT)
             )
         )
-
-        result = mock_client.file.upload("/remote/f.bin", file)
+        status = UploadStatus()
+        result = mock_client.file.upload("/remote/f.bin", file, status=status)
 
         mock_client.file._api.upload_file_sample.assert_called_once()
 
         assert isinstance(result, File)
         assert result.sha1.upper() == self._INSTANT_SHA1
+        assert status.use_instant_upload is True
+        assert status.is_instant_uploaded is False
 
     def test_exception_fallback(self, mock_client):
         file = io.BytesIO(self._INSTANT_CONTENT)
@@ -111,13 +117,13 @@ class TestInstantUpload:
                 "f.bin", self._INSTANT_SHA1, len(self._INSTANT_CONTENT)
             )
         )
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = mock_client.file.upload("/remote/f.bin", file)
+        status = UploadStatus()
+        result = mock_client.file.upload("/remote/f.bin", file, status=status)
         assert isinstance(result, File)
         assert result.sha1.upper() == self._INSTANT_SHA1
-        assert any("instant upload failed" in str(w.message) for w in caught)
-        assert any(err_msg in str(w.message) for w in caught)
+        assert status.use_instant_upload is True
+        assert status.instant_upload_error is not None
+        assert err_msg in str(status.instant_upload_error)
         mock_client.file._api.upload_file_sample.assert_called_once()
 
     @staticmethod

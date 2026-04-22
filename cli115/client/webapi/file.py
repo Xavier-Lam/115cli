@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-import warnings
-from typing import BinaryIO, Callable
+from contextlib import contextmanager
+from typing import BinaryIO
 
 from cli115.api.web.p115client import check_response
 from cli115.client.base import (
@@ -22,6 +22,7 @@ from cli115.client.models import (
     Progress,
     SortField,
     SortOrder,
+    UploadStatus,
 )
 from cli115.client.utils import parse_item, parse_ts
 from cli115.client.webapi.base import BaseClient
@@ -33,6 +34,22 @@ DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
 )
+
+
+@contextmanager
+def patch_filelike(file: BinaryIO, progress: Progress):
+    original_read = file.read
+
+    def patched_read(size=-1) -> bytes:
+        chunk = original_read(size)
+        progress.update(progress._completed_bytes + len(chunk))
+        return chunk
+
+    file.read = patched_read
+    try:
+        yield
+    finally:
+        file.read = original_read
 
 
 class WebAPIFileClient(FileClient, BaseClient):
@@ -222,8 +239,10 @@ class WebAPIFileClient(FileClient, BaseClient):
         file: BinaryIO,
         *,
         instant_only: int | None = None,
-        progress_callback: Callable[[Progress], object] | None = None,
+        status: UploadStatus | None = None,
     ) -> File:
+        if not status:
+            status = UploadStatus()
         path = normalize_path(path)
 
         # raise an error if the file already exists
@@ -239,59 +258,64 @@ class WebAPIFileClient(FileClient, BaseClient):
         dir_id = self._resolve_dir_id(parent_path)
 
         sha1, file_size = sha1_file(file)
+        with Progress(file_size) as progress:
+            status.progress = progress
+            progress.start()
 
-        # Only attempt instant upload when the file meets the minimum size.
-        if file_size >= MIN_INSTANT_UPLOAD_SIZE:
-            force_instant = instant_only is not None and file_size >= instant_only
-            try:
-                success = self._try_instant_upload(
-                    file=file,
-                    filename=filename,
-                    file_size=file_size,
-                    sha1=sha1,
-                    dir_id=dir_id,
-                    path=path,
-                )
-            except Exception as exc:
-                if force_instant:
-                    raise
-                warnings.warn(
-                    f"instant upload failed ({exc}); falling back to normal upload",
-                    stacklevel=2,
-                )
-            else:
-                if success:
-                    return self.stat(path)
-                if force_instant:
-                    raise InstantUploadNotAvailableError(
-                        "instant upload is not available for this file "
-                        "(file not found on server)"
+            status.use_instant_upload = file_size >= MIN_INSTANT_UPLOAD_SIZE
+            # Only attempt instant upload when the file meets the minimum size.
+            if status.use_instant_upload:
+                status.use_instant_upload = True
+                force_instant = instant_only is not None and file_size >= instant_only
+                try:
+                    success = self._try_instant_upload(
+                        file=file,
+                        filename=filename,
+                        file_size=file_size,
+                        sha1=sha1,
+                        dir_id=dir_id,
+                        path=path,
                     )
-            file.seek(0)
+                except Exception as exc:
+                    if force_instant:
+                        raise
+                    status.instant_upload_error = exc
+                else:
+                    if success:
+                        status.is_instant_uploaded = True
+                        return self.stat(path)
+                    if force_instant:
+                        raise InstantUploadNotAvailableError(
+                            "instant upload is not available for this file "
+                            "(file not found on server)"
+                        )
+                file.seek(0)
 
-        if isinstance(file, RemoteFile):
-            file.set_stream(True)  # use streaming upload for RemoteFile
+            if isinstance(file, RemoteFile):
+                file.set_stream(True)  # use streaming upload for RemoteFile
 
-        resp = self._api.upload_file_sample(
-            file,
-            pid=dir_id,
-            filename=filename,
-        )
-        resp = check_response(resp)
-        data = resp.get("data", {})
+            status.is_instant_uploaded = False
+            with patch_filelike(file, progress):
+                resp = self._api.upload_file_sample(
+                    file,
+                    pid=dir_id,
+                    filename=filename,
+                )
+            resp = check_response(resp)
+            data = resp.get("data", {})
 
-        return File(
-            id=str(data.get("file_id", "")),
-            parent_id=str(dir_id),
-            name=data.get("file_name", ""),
-            path=path,
-            pickcode=data.get("pick_code", ""),
-            created_time=parse_ts(data.get("file_ptime")),
-            modified_time=None,
-            open_time=None,
-            sha1=data.get("sha1", ""),
-            size=int(data.get("file_size", 0)),
-        )
+            return File(
+                id=str(data.get("file_id", "")),
+                parent_id=str(dir_id),
+                name=data.get("file_name", ""),
+                path=path,
+                pickcode=data.get("pick_code", ""),
+                created_time=parse_ts(data.get("file_ptime")),
+                modified_time=None,
+                open_time=None,
+                sha1=data.get("sha1", ""),
+                size=int(data.get("file_size", 0)),
+            )
 
     def _try_instant_upload(
         self,

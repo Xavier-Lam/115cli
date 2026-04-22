@@ -6,9 +6,8 @@ import argparse
 
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import format_entry, PairFormatterMixin
-from cli115.exceptions import CommandLineError
 from cli115.helpers import parse_size
-from cli115.tools import upload
+from cli115.uploader import Uploader
 
 
 class UploadCommand(PairFormatterMixin, BaseCommand):
@@ -49,14 +48,21 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
                 "(may be repeated; matching files are skipped)"
             ),
         )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            default=False,
+            help="Only show files that would be uploaded without uploading",
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
-        result = upload(
-            self._create_client(),
+        uploader = Uploader(self._create_client())
+        result = uploader.upload(
             args.local_path,
             args.remote_path,
             instant_only=args.instant_only,
             include=args.include,
             exclude=args.exclude,
+            dry_run=args.dry_run,
         )
         self.output(format_entry(result), args)

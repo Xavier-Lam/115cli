@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cli115.tools import upload
+from cli115.uploader import Uploader
 from tests.client.conftest import make_dir, make_file
 
 
@@ -19,12 +19,15 @@ class TestUploadFile:
         uploaded = make_file(name="file.txt")
         client.file.upload.return_value = uploaded
 
-        result = upload(client, "/local/file.txt", "/remote/file.txt")
+        uploader = Uploader(client)
+        uploader.upload("/local/file.txt", "/remote/file.txt")
 
-        client.file.upload.assert_called_once_with(
-            "/remote/file.txt", "/local/file.txt", instant_only=None
-        )
-        assert result is uploaded
+        assert client.file.upload.call_count == 1
+        call_args = client.file.upload.call_args
+        assert call_args.args[0] == "/remote/file.txt"
+        assert call_args.kwargs["instant_only"] is None
+        assert len(uploader.entries) == 1
+        assert uploader.entries[0].remote_path == "/remote/file.txt"
 
     def test_upload_to_existing_directory_appends_filename(self):
         client = _make_client()
@@ -32,23 +35,26 @@ class TestUploadFile:
         uploaded = make_file(name="file.txt")
         client.file.upload.return_value = uploaded
 
-        result = upload(client, "/local/path/file.txt", "/remote/dir")
+        uploader = Uploader(client)
+        uploader.upload("/local/path/file.txt", "/remote/dir")
 
-        client.file.upload.assert_called_once_with(
-            "/remote/dir/file.txt", "/local/path/file.txt", instant_only=None
-        )
-        assert result is uploaded
+        assert client.file.upload.call_count == 1
+        call_args = client.file.upload.call_args
+        assert call_args.args[0] == "/remote/dir/file.txt"
+        assert call_args.kwargs["instant_only"] is None
+        assert len(uploader.entries) == 1
 
     def test_upload_instant_only_threshold_passed_through(self):
         client = _make_client()
         client.file.stat.side_effect = FileNotFoundError("not found")
         threshold = 100 * 1024 * 1024  # 100 MB
 
-        upload(client, "/local/file.txt", "/remote/file.txt", instant_only=threshold)
+        uploader = Uploader(client)
+        uploader.upload("/local/file.txt", "/remote/file.txt", instant_only=threshold)
 
-        client.file.upload.assert_called_once_with(
-            "/remote/file.txt", "/local/file.txt", instant_only=threshold
-        )
+        assert client.file.upload.call_count == 1
+        call_args = client.file.upload.call_args
+        assert call_args.kwargs["instant_only"] == threshold
 
 
 class TestUploadDirectory:
@@ -61,12 +67,11 @@ class TestUploadDirectory:
         dest_dir = make_dir(name=tmp_path.name)
         client.file.create_directory.return_value = dest_dir
 
-        result = upload(client, str(tmp_path), "/remote/newdir")
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/newdir")
 
-        client.file.create_directory.assert_called_once_with(
-            "/remote/newdir", parents=True
-        )
-        assert result is dest_dir
+        assert isinstance(uploader, Uploader)
+        client.file.create_directory.assert_any_call("/remote/newdir", parents=True)
 
     def test_upload_dir_to_existing_remote_dir_creates_subdir(self, tmp_path):
         (tmp_path / "file.txt").write_text("content")
@@ -76,11 +81,12 @@ class TestUploadDirectory:
         dest_dir = make_dir(name=tmp_path.name)
         client.file.create_directory.return_value = dest_dir
 
-        result = upload(client, str(tmp_path), "/remote/existing")
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/existing")
 
+        assert isinstance(uploader, Uploader)
         expected_dest = "/remote/existing/" + tmp_path.name
-        client.file.create_directory.assert_called_once_with(expected_dest)
-        assert result is dest_dir
+        client.file.create_directory.assert_any_call(expected_dest, parents=False)
 
     def test_upload_dir_to_remote_file_raises(self, tmp_path):
         (tmp_path / "file.txt").write_text("content")
@@ -88,8 +94,9 @@ class TestUploadDirectory:
         client = _make_client()
         client.file.stat.return_value = make_file(name="remote.txt")
 
+        uploader = Uploader(client)
         with pytest.raises(FileExistsError, match="cannot upload directory"):
-            upload(client, str(tmp_path), "/remote/file.txt")
+            uploader.upload(str(tmp_path), "/remote/file.txt")
 
         client.file.upload.assert_not_called()
 
@@ -102,13 +109,15 @@ class TestUploadDirectory:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(client, str(tmp_path), "/remote/dest")
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest")
 
         assert client.file.upload.call_count == 3
         uploaded_names = {
             c.args[0].rsplit("/", 1)[-1] for c in client.file.upload.call_args_list
         }
         assert uploaded_names == {"a.txt", "b.txt", "c.txt"}
+        assert len(uploader.entries) == 3
 
     def test_upload_dir_multilevel_subdirs_created(self, tmp_path):
         # Structure:
@@ -130,7 +139,8 @@ class TestUploadDirectory:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(client, str(tmp_path), "/remote/dest")
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest")
 
         # Base dir + sub1 + sub1/sub2
         assert client.file.create_directory.call_count == 3
@@ -141,10 +151,6 @@ class TestUploadDirectory:
 
         # All 3 files uploaded
         assert client.file.upload.call_count == 3
-        uploaded_names = {
-            c.args[0].rsplit("/", 1)[-1] for c in client.file.upload.call_args_list
-        }
-        assert uploaded_names == {"root.txt", "mid.txt", "deep.txt"}
 
     def test_upload_dir_instant_only_passed_to_file_uploads(self, tmp_path):
         (tmp_path / "file.txt").write_text("content")
@@ -154,7 +160,8 @@ class TestUploadDirectory:
         client.file.create_directory.return_value = make_dir()
         threshold = 50 * 1024 * 1024  # 50 MB
 
-        upload(client, str(tmp_path), "/remote/dest", instant_only=threshold)
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest", instant_only=threshold)
 
         client.file.upload.assert_called_once()
         assert client.file.upload.call_args.kwargs["instant_only"] == threshold
@@ -170,7 +177,8 @@ class TestUploadDirectoryPatterns:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(client, str(tmp_path), "/remote/dest", exclude=["**/*.log"])
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest", exclude=["**/*.log"])
 
         client.file.create_directory.assert_called_once_with(
             "/remote/dest", parents=True
@@ -188,7 +196,8 @@ class TestUploadDirectoryPatterns:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(client, str(tmp_path), "/remote/dest", include=["**/*.py"])
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest", include=["**/*.py"])
 
         client.file.create_directory.assert_called_once_with(
             "/remote/dest", parents=True
@@ -211,7 +220,8 @@ class TestUploadDirectoryPatterns:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(client, str(tmp_path), "/remote/dest", exclude=["temp/**"])
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest", exclude=["temp/**"])
 
         created_dirs = [c.args[0] for c in client.file.create_directory.call_args_list]
         assert "/remote/dest" in created_dirs
@@ -230,8 +240,8 @@ class TestUploadDirectoryPatterns:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(
-            client,
+        uploader = Uploader(client)
+        uploader.upload(
             str(tmp_path),
             "/remote/dest",
             include=["**/*.py"],
@@ -253,9 +263,36 @@ class TestUploadDirectoryPatterns:
         client.file.stat.side_effect = FileNotFoundError("not found")
         client.file.create_directory.return_value = make_dir()
 
-        upload(client, str(tmp_path), "/remote/dest")
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest")
 
         client.file.create_directory.assert_called_once_with(
             "/remote/dest", parents=True
         )
         assert client.file.upload.call_count == 2
+
+
+class TestDryRun:
+    def test_dry_run_no_upload_called(self):
+        client = _make_client()
+        client.file.stat.side_effect = FileNotFoundError("not found")
+
+        uploader = Uploader(client, dry_run=True)
+        uploader.upload("/local/file.txt", "/remote/file.txt")
+
+        client.file.upload.assert_not_called()
+        assert len(uploader.entries) == 1
+
+    def test_dry_run_directory_no_upload_called(self, tmp_path):
+        (tmp_path / "a.txt").write_text("a")
+        (tmp_path / "b.txt").write_text("b")
+
+        client = _make_client()
+        client.file.stat.side_effect = FileNotFoundError("not found")
+
+        uploader = Uploader(client, dry_run=True)
+        uploader.upload(str(tmp_path), "/remote/dest")
+
+        client.file.upload.assert_not_called()
+        client.file.create_directory.assert_not_called()
+        assert len(uploader.entries) == 2

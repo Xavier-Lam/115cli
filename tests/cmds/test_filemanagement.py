@@ -513,7 +513,7 @@ class TestStatCommand:
 
 
 class TestUploadCommand:
-    @patch("cli115.cmds.upload.upload")
+    @patch("cli115.cmds.upload.Uploader.upload")
     @patch.object(UploadCommand, "_create_client")
     def test_upload_calls_tool(self, mock_create, mock_upload):
         mock_client = MagicMock()
@@ -527,7 +527,6 @@ class TestUploadCommand:
         cmds["upload"].execute(args)
 
         mock_upload.assert_called_once_with(
-            mock_client,
             "/local/file.txt",
             "/remote/file.txt",
             instant_only=None,
@@ -535,7 +534,7 @@ class TestUploadCommand:
             exclude=None,
         )
 
-    @patch("cli115.cmds.upload.upload")
+    @patch("cli115.cmds.upload.Uploader.upload")
     @patch.object(UploadCommand, "_create_client")
     def test_upload_output(self, mock_create, mock_upload, capsys):
         mock_create.return_value = MagicMock()
@@ -553,7 +552,7 @@ class TestUploadCommand:
         assert data["SHA1"] == "abc123"
         assert data["Size"] == 2048
 
-    @patch("cli115.cmds.upload.upload")
+    @patch("cli115.cmds.upload.Uploader.upload")
     @patch.object(UploadCommand, "_create_client")
     def test_instant_only_passes_threshold(self, mock_create, mock_upload):
         mock_create.return_value = MagicMock()
@@ -574,7 +573,7 @@ class TestUploadCommand:
         call_kwargs = mock_upload.call_args.kwargs
         assert call_kwargs["instant_only"] == 100 * 1024 * 1024
 
-    @patch("cli115.cmds.upload.upload")
+    @patch("cli115.cmds.upload.Uploader.upload")
     @patch.object(UploadCommand, "_create_client")
     def test_include_and_exclude_patterns_passed(self, mock_create, mock_upload):
         mock_create.return_value = MagicMock()
@@ -600,7 +599,7 @@ class TestUploadCommand:
         assert call_kwargs["include"] == ["src/**"]
         assert call_kwargs["exclude"] == ["**/*.log", "temp/**"]
 
-    @patch("cli115.cmds.upload.upload")
+    @patch("cli115.cmds.upload.Uploader.upload")
     @patch.object(UploadCommand, "_create_client")
     def test_upload_dir_to_file_raises_command_error(self, mock_create, mock_upload):
         mock_create.return_value = MagicMock()
