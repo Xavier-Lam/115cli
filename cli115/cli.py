@@ -78,6 +78,8 @@ def load_config() -> ConfigParser:
         config["download"]["min_split_size"] = "2M"
     if "max_connection" not in config["download"]:
         config["download"]["max_connection"] = "2"
+    if "check_integrity" not in config["download"]:
+        config["download"]["check_integrity"] = "false"
     return config
 
 

@@ -37,7 +37,11 @@ class TestConfigCommand:
     def test_outputs_ini_sections(self, mock_load, capsys):
         cfg = ConfigParser()
         cfg["general"] = {"user_agent": "TestUA", "credentials": "/tmp/creds"}
-        cfg["download"] = {"min_split_size": "20M", "max_connection": "10"}
+        cfg["download"] = {
+            "min_split_size": "20M",
+            "max_connection": "10",
+            "check_integrity": "true",
+        }
 
         cm = CredentialManager(cfg)
         parser, commands = build_parser(cfg, cm)
@@ -53,6 +57,8 @@ class TestConfigCommand:
         assert "20m" in output.lower()
         assert "max_connection" in output
         assert "10" in output
+        assert "check_integrity" in output
+        assert "true" in output.lower()
 
     @patch("cli115.cli.DEFAULT_CONFIG_FILE")
     def test_outputs_default_when_no_file(self, mock_file, capsys):
@@ -67,6 +73,8 @@ class TestConfigCommand:
         assert "[general]" in output
         assert "[download]" in output
         assert "2m" in output.lower()
+        assert "check_integrity" in output
+        assert "false" in output.lower()
 
 
 class TestDfCommand:

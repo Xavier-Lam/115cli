@@ -77,7 +77,10 @@ class FetchCommand(BaseCommand):
             download_elapsed = time.monotonic() - start
             print(f"Download time: {_format_duration(download_elapsed)}")
 
-            if args.check_integrity:
+            check_integrity = args.check_integrity or self.cfg.getboolean(
+                "download", "check_integrity", fallback=False
+            )
+            if check_integrity:
                 print("Checking file integrity...")
                 sha1, size = sha1_file(f)
                 if size != info.size:

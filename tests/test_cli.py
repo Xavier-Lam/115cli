@@ -20,12 +20,14 @@ class TestLoadConfig:
         assert cfg["general"]["user_agent"] == DEFAULT_USER_AGENT
         assert cfg["download"]["min_split_size"] == "2M"
         assert cfg["download"]["max_connection"] == "2"
+        assert cfg["download"]["check_integrity"] == "false"
 
     def test_reads_config_file_when_exists(self, tmp_path):
         config_file = tmp_path / "config.ini"
         config_file.write_text(
             "[general]\ncredentials = /custom/creds\nuser_agent = CustomUA\n"
             "[download]\nmin_split_size = 10M\nmax_connection = 5\n"
+            "check_integrity = true\n"
         )
         with patch("cli115.cli.DEFAULT_CONFIG_FILE", new=config_file):
             cfg = load_config()
@@ -34,6 +36,7 @@ class TestLoadConfig:
         assert cfg["general"]["user_agent"] == "CustomUA"
         assert cfg["download"]["min_split_size"] == "10M"
         assert cfg["download"]["max_connection"] == "5"
+        assert cfg["download"]["check_integrity"] == "true"
 
     def test_missing_keys_filled_with_defaults_when_file_partial(self, tmp_path):
         config_file = tmp_path / "config.ini"
@@ -45,6 +48,7 @@ class TestLoadConfig:
         assert cfg["general"]["user_agent"] == DEFAULT_USER_AGENT
         assert cfg["download"]["min_split_size"] == "2M"
         assert cfg["download"]["max_connection"] == "2"
+        assert cfg["download"]["check_integrity"] == "false"
 
 
 class TestBuildParser:

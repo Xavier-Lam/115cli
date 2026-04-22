@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-from configparser import ConfigParser
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -178,6 +177,31 @@ class TestFetchCommand:
             try:
                 cmds["fetch"].execute(args)
                 assert "Checking file integrity" in capsys.readouterr().out
+            finally:
+                os.chdir(orig_dir)
+
+    @patch("cli115.cmds.fetch.sha1_file")
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_check_integrity_enabled_by_config(
+        self, mock_create, mock_sha1, capsys
+    ):
+        cfg = load_config()
+        cfg["download"]["check_integrity"] = "true"
+        file = _make_file(name="remote.bin", size=1024)
+        mock_create.return_value = self._make_client_mock(file=file)
+        mock_sha1.return_value = (file.sha1, file.size)
+
+        parser, cmds = build_parser(cfg, CredentialManager(cfg))
+        args = parser.parse_args(["fetch", "/remote/remote.bin"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                cmds["fetch"].execute(args)
+                output = capsys.readouterr().out
+                assert "Checking file integrity" in output
+                assert mock_sha1.called
             finally:
                 os.chdir(orig_dir)
 
@@ -614,6 +638,25 @@ class TestUrlCommand:
         assert "User-Agent: Mozilla/5.0" in output
         assert "UID=u1" in output
         assert "https://cdn.115.com/test.bin?t=123" in output
+
+    @patch.object(UrlCommand, "_create_client")
+    def test_aria2c_check_integrity_enabled_by_config(self, mock_create, capsys):
+        cfg = load_config()
+        cfg["download"] = {
+            "min_split_size": "2M",
+            "max_connection": "10",
+            "check_integrity": "true",
+        }
+        mock_client = MagicMock()
+        mock_client.file.url.return_value = _make_url()
+        mock_create.return_value = mock_client
+
+        parser, cmds = build_parser(cfg, CredentialManager(cfg))
+        args = parser.parse_args(["url", "--format", "aria2c", "/test.bin"])
+        cmds["url"].execute(args)
+
+        output = capsys.readouterr().out
+        assert f"--checksum=sha-1={_make_url().sha1}" in output
 
     @patch.object(UrlCommand, "_create_client")
     def test_aria2c_with_check_integrity(self, mock_create, capsys):

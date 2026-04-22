@@ -97,8 +97,11 @@ class UrlCommand(PairFormatterMixin, BaseCommand):
     def get_formatter(self, name, args):
         if name == "aria2c":
             download = self.cfg["download"]
+            check_integrity = args.check_integrity or self.cfg.getboolean(
+                "download", "check_integrity", fallback=False
+            )
             return Aria2cFormatter(
-                check_integrity=args.check_integrity,
+                check_integrity=check_integrity,
                 min_split_size=args.min_split_size or download["min_split_size"],
                 max_connection=args.max_connections or download["max_connection"],
             )
