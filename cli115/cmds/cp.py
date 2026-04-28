@@ -13,7 +13,7 @@ class CpCommand(BaseCommand):
 
     def register(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "paths", nargs="+", help="Source path(s) followed by destination path"
+            "paths", nargs="+", help="Source path(s) followed by destination directory"
         )
 
     def execute(self, args: argparse.Namespace) -> None:

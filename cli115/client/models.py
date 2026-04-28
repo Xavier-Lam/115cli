@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 
+from blinker import Signal
+
 
 # region Enums
 
@@ -215,19 +217,140 @@ class Pagination:
     limit: int
 
 
-@dataclass(frozen=True)
 class Progress:
-    """Upload progress information passed to progress callbacks.
+    """Tracks download or upload progress for a single file.
 
     Attributes:
         total_bytes: Total size of the file being uploaded in bytes.
         completed_bytes: Number of bytes uploaded so far.
         duration: Time elapsed since the upload started.
+        on_change: Signal emitted whenever progress is updated.
     """
 
-    total_bytes: int
-    completed_bytes: int
-    duration: timedelta
+    _start_time: datetime | None = None
+    _end_time: datetime | None = None
+
+    def __init__(self, total_bytes: int) -> None:
+        self._total_bytes: int = total_bytes
+        self._completed_bytes: int = 0
+        self.on_change: Signal = Signal()
+
+    @property
+    def total_bytes(self) -> int:
+        return self._total_bytes
+
+    @property
+    def completed_bytes(self) -> int:
+        return self._completed_bytes
+
+    @property
+    def duration(self) -> timedelta:
+        if self._start_time is None:
+            return timedelta(0)
+        if self._end_time is not None:
+            return self._end_time - self._start_time
+        return datetime.now() - self._start_time
+
+    def is_started(self) -> bool:
+        return self._start_time is not None
+
+    def is_completed(self) -> bool:
+        return self._completed_bytes >= self._total_bytes
+
+    def is_failed(self) -> bool:
+        return self._end_time is not None and not self.is_completed()
+
+    def start(self) -> None:
+        self._start_time = datetime.now()
+
+    def update(self, completed_bytes: int) -> None:
+        self._completed_bytes = completed_bytes
+        if self._completed_bytes >= self._total_bytes:
+            self._completed_bytes = self._total_bytes
+            self._end_time = datetime.now()
+        self.on_change.send(self)
+
+    def complete(self) -> None:
+        self._completed_bytes = self._total_bytes
+        self._end_time = datetime.now()
+        self.on_change.send(self)
+
+    def failed(self) -> None:
+        self._end_time = datetime.now()
+        self.on_change.send(self)
+
+    def __enter__(self) -> Progress:
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if exc_type is None:
+            self.complete()
+        else:
+            self.failed()
+
+
+class UploadStatus:
+    def __init__(self) -> None:
+        self._use_instant_upload: bool | None = None
+        self._is_instant_uploaded: bool | None = None
+        self._instant_upload_error: Exception | None = None
+        self._progress: Progress | None = None
+        self._is_completed: bool = False
+        self.on_update: Signal = Signal()
+        self.on_complete: Signal = Signal()
+
+    @property
+    def use_instant_upload(self) -> bool | None:
+        return self._use_instant_upload
+
+    @use_instant_upload.setter
+    def use_instant_upload(self, value: bool | None) -> None:
+        self._use_instant_upload = value
+        self.on_update.send(self, field="use_instant_upload", value=value)
+
+    @property
+    def is_instant_uploaded(self) -> bool | None:
+        return self._is_instant_uploaded
+
+    @is_instant_uploaded.setter
+    def is_instant_uploaded(self, value: bool | None) -> None:
+        self._is_instant_uploaded = value
+        self.on_update.send(self, field="is_instant_uploaded", value=value)
+        value and self._complete()
+
+    @property
+    def instant_upload_error(self) -> Exception | None:
+        return self._instant_upload_error
+
+    @instant_upload_error.setter
+    def instant_upload_error(self, value: Exception | None) -> None:
+        self._instant_upload_error = value
+        self.on_update.send(self, field="instant_upload_error", value=value)
+
+    @property
+    def progress(self) -> Progress | None:
+        return self._progress
+
+    @progress.setter
+    def progress(self, value: Progress | None) -> None:
+        self._progress = value
+        if value is not None:
+            value.on_change.connect(self._emit_progress_update)
+        self.on_update.send(self, field="progress", value=value)
+
+    @property
+    def is_completed(self) -> bool:
+        return self._is_completed
+
+    def _complete(self):
+        if not self.is_completed:
+            self._is_completed = True
+            self.on_complete.send(self)
+
+    def _emit_progress_update(self, sender: Progress, **_) -> None:
+        self.on_update.send(self, field="progress", value=self._progress)
+        sender.is_completed() and self._complete()
 
 
 @dataclass(frozen=True)

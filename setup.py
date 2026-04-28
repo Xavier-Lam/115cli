@@ -28,6 +28,7 @@ setup(
     python_requires=">=3.12",
     install_requires=[
         "p115client>=0.0.8",
+        "blinker",
         "httpx",
         "pathspec",
         "tqdm",
