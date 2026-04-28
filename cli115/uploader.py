@@ -52,6 +52,7 @@ class Uploader:
         instant_only: int | None = None,
         include: Sequence[str] | None = None,
         exclude: Sequence[str] | None = None,
+        no_target_dir: bool = False,
     ) -> None:
         """Upload a local file or directory to the remote filesystem.
 
@@ -90,7 +91,7 @@ class Uploader:
 
         Raises:
             FileExistsError: If attempting to upload a directory to a remote file path.
-            FileNotFoundError: Propagated from client calls when the remote entry is missing.
+            FileNotFoundError: If the target remote directory does not exist.
         """
 
         local_path = os.path.abspath(local_path)
@@ -101,6 +102,7 @@ class Uploader:
                 instant_only=instant_only,
                 include=include,
                 exclude=exclude,
+                no_target_dir=no_target_dir,
             )
         else:
             return self._upload_file(
@@ -142,11 +144,13 @@ class Uploader:
         local_path: str,
         remote_path: str,
         *,
+        no_target_dir: bool = False,
         instant_only: int | None,
         include: PathSpec | None,
         exclude: PathSpec | None,
     ) -> Directory | None:
         entry = None
+        dest_path = remote_path
         try:
             entry = self._client.file.stat(remote_path)
             if not entry.is_directory:
@@ -154,11 +158,11 @@ class Uploader:
                     f"cannot upload directory to a file path: {remote_path}"
                 )
             # Remote exists as a directory: create a subdirectory with the local dir name.
-            dir_name = os.path.basename(local_path)
-            dest_path = join_path(remote_path, dir_name)
+            if not no_target_dir:
+                dir_name = os.path.basename(local_path)
+                dest_path = join_path(remote_path, dir_name)
         except FileNotFoundError:
-            entry = None
-            dest_path = remote_path
+            pass
 
         include_spec = PathSpec.from_lines("gitignore", include) if include else None
         exclude_spec = PathSpec.from_lines("gitignore", exclude) if exclude else None

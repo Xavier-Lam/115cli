@@ -532,6 +532,7 @@ class TestUploadCommand:
             instant_only=None,
             include=None,
             exclude=None,
+            no_target_dir=False,
         )
 
     @patch("cli115.cmds.upload.Uploader.upload")

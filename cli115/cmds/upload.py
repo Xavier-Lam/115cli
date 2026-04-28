@@ -61,6 +61,16 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
             ),
         )
         parser.add_argument(
+            "-T",
+            "--no-target-directory",
+            action="store_true",
+            default=False,
+            help=(
+                "Treat remote_path as the exact destination rather than a "
+                "directory to upload into (never append the local name)"
+            ),
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             default=False,
@@ -88,6 +98,7 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
                     instant_only=args.instant_only,
                     include=args.include,
                     exclude=args.exclude,
+                    no_target_dir=args.no_target_directory,
                 )
             except BaseException as exc:
                 state["error"] = exc

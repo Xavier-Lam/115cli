@@ -272,6 +272,21 @@ class TestUploadDirectoryPatterns:
         assert client.file.upload.call_count == 2
 
 
+class TestNoTargetDirectory:
+    def test_dir_upload_no_target_dir_uses_remote_as_dest(self, tmp_path):
+        (tmp_path / "file.txt").write_text("content")
+
+        client = _make_client()
+        client.file.stat.return_value = make_dir(name="existing")
+        client.file.create_directory.return_value = make_dir()
+
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/existing", no_target_dir=True)
+
+        client.file.create_directory.assert_any_call("/remote/existing", parents=False)
+        assert client.file.upload.call_args.args[0] == "/remote/existing/file.txt"
+
+
 class TestDryRun:
     def test_dry_run_no_upload_called(self):
         client = _make_client()
