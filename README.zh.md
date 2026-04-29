@@ -18,7 +18,7 @@ pip install 115cli
 
 ## 快速上手(CLI)
 
-先用 `115cli auth` [登录](#认证) (目前只支持从浏览器复制的 cookie 登录), 认证成功后就可以用 `115cli` 命令操作你的 115 云盘了.
+先用 `115cli login` [登录](#认证) (目前只支持从浏览器复制的 cookie 登录), 认证成功后就可以用 `115cli` 命令操作你的 115 云盘了.
 
 常见示例:
 
@@ -52,6 +52,7 @@ pip install 115cli
 # 下载
 115cli fetch /path/to/file.mp4
 115cli fetch /path/to/file.mp4 -o /local/save/path.mp4
+115cli fetch --id 1234567 -o /local/save/path.mp4
 
 # 上传(支持秒传)
 115cli upload /local/file.txt /remote/dir/file.txt

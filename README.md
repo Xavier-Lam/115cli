@@ -20,7 +20,7 @@ pip install 115cli
 
 ### CLI
 
-After [authenticating](#authentication) with `115cli auth`, you can use the `115cli` command to interact with your 115 cloud storage. Here are some examples of available commands:
+After [authenticating](#authentication) with `115cli login`, you can use the `115cli` command to interact with your 115 cloud storage. Here are some examples of available commands:
 
 ```bash
 # Authenticate with cookies
@@ -52,6 +52,7 @@ After [authenticating](#authentication) with `115cli auth`, you can use the `115
 # Download a file to local disk
 115cli fetch /path/to/file.mp4
 115cli fetch /path/to/file.mp4 -o /local/save/path.mp4
+115cli fetch --id 1234567 -o /local/save/path.mp4
 
 # Upload (support instant upload)
 115cli upload /local/file.txt /remote/dir/file.txt

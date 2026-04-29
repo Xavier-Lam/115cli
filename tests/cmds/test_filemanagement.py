@@ -206,6 +206,28 @@ class TestFetchCommand:
             finally:
                 os.chdir(orig_dir)
 
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_by_id(self, mock_create, capsys):
+        file = _make_file(name="remote.bin", size=1024)
+        mock_client = MagicMock()
+        mock_client.file.id.return_value = file
+        mock_client.file.open.return_value = _make_remote_file_mock()
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["fetch", "--id", "200"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                cmds["fetch"].execute(args)
+                mock_client.file.id.assert_called_once_with("200")
+                mock_client.file.stat.assert_not_called()
+                assert os.path.exists("remote.bin")
+            finally:
+                os.chdir(orig_dir)
+
     @patch("cli115.cmds.fetch.sha1_file")
     @patch.object(FetchCommand, "_create_client")
     def test_fetch_check_integrity_failed(self, mock_create, mock_sha1):

@@ -18,7 +18,13 @@ class FetchCommand(BaseCommand):
     """Download a file to local disk with progress."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("path", help="Remote file path on 115")
+        parser.add_argument("path", nargs="?", help="Remote file path on 115")
+        parser.add_argument(
+            "--id",
+            dest="file_id",
+            default=None,
+            help="Fetch by file ID instead of path",
+        )
         parser.add_argument(
             "--chunk-size",
             type=parse_size,
@@ -38,8 +44,14 @@ class FetchCommand(BaseCommand):
         )
 
     def execute(self, args: argparse.Namespace) -> None:
+        if not args.file_id and not args.path:
+            raise CommandLineError("either 'path' or '--id' is required")
         client = self._create_client()
-        info = client.file.stat(args.path)
+        info = (
+            client.file.id(args.file_id)
+            if args.file_id
+            else client.file.stat(args.path)
+        )
         output = args.output
         if not output:
             output = info.name
