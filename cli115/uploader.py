@@ -24,6 +24,7 @@ class UploadEntry:
         self.remote_path = remote_path
         self.size = os.path.getsize(local_path) if os.path.isfile(local_path) else 0
         self.status = UploadStatus()
+        self.error: Exception | None = None
 
 
 class Uploader:
@@ -192,12 +193,15 @@ class Uploader:
 
         # Upload files
         for upload_entry in entries:
-            self._client.file.upload(
-                upload_entry.remote_path,
-                upload_entry.local_path,
-                instant_only=instant_only,
-                status=upload_entry.status,
-            )
+            try:
+                self._client.file.upload(
+                    upload_entry.remote_path,
+                    upload_entry.local_path,
+                    instant_only=instant_only,
+                    status=upload_entry.status,
+                )
+            except Exception as exc:
+                upload_entry.error = exc
 
         return dest_dir
 

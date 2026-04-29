@@ -35,6 +35,9 @@ class BaseCommand(ABC):
     def execute(self, args: argparse.Namespace) -> None:
         """Execute the command with parsed arguments."""
 
+    def warn(self, message: str) -> None:
+        print(f"Warning: {message}", file=sys.stderr)
+
     def _create_client(
         self, uid: str | None = None, cred_type: str | None = None
     ) -> Client:
@@ -100,12 +103,11 @@ class PaginationCommand(BaseCommand, ABC):
         total = len(collection)
 
         if not args.offset and not args.limit and total > limit:
-            print(
+            self.warn(
                 (
                     "Warning: {total} items total, only showing up to {limit}. "
                     "Use --offset and --limit to paginate."
-                ).format(total=total, limit=limit),
-                file=sys.stderr,
+                ).format(total=total, limit=limit)
             )
         return items
 

@@ -119,6 +119,29 @@ class TestUploadDirectory:
         assert uploaded_names == {"a.txt", "b.txt", "c.txt"}
         assert len(uploader.entries) == 3
 
+    def test_upload_dir_continues_and_records_file_errors(self, tmp_path):
+        (tmp_path / "a.txt").write_text("a")
+        (tmp_path / "b.txt").write_text("b")
+
+        client = _make_client()
+        client.file.stat.side_effect = FileNotFoundError("not found")
+        client.file.create_directory.return_value = make_dir()
+        client.file.upload.side_effect = [RuntimeError("network error"), make_file()]
+
+        uploader = Uploader(client)
+        uploader.upload(str(tmp_path), "/remote/dest")
+
+        assert client.file.upload.call_count == 2
+        assert len(uploader.entries) == 2
+        failed_entries = [
+            entry for entry in uploader.entries if entry.error is not None
+        ]
+        assert len(failed_entries) == 1
+
+        failed_entry = failed_entries[0]
+        assert failed_entry.remote_path.endswith("/a.txt")
+        assert str(failed_entry.error) == "network error"
+
     def test_upload_dir_multilevel_subdirs_created(self, tmp_path):
         # Structure:
         #   tmp/

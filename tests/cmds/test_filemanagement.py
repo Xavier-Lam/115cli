@@ -23,10 +23,11 @@ from cli115.cmds.mv import MvCommand
 from cli115.cmds.rename import RenameCommand
 from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
-from cli115.cmds.upload import UploadCommand, UploadProgress
+from cli115.cmds.upload import UploadCommand
 from cli115.cmds.url import UrlCommand
 from cli115.credentials import CredentialManager
 from cli115.exceptions import CommandLineError
+from cli115.uploader import UploadEntry
 from tests.helpers import make_lazy
 
 
@@ -666,6 +667,31 @@ class TestUploadCommand:
         output = capsys.readouterr().out
         assert str(local_file) in output
         assert "/remote/file.txt" in output
+
+    @patch("cli115.cmds.upload.Uploader")
+    @patch.object(UploadCommand, "_create_client")
+    def test_warns_failed_files_after_upload(
+        self, mock_create, mock_uploader_cls, capsys
+    ):
+        mock_create.return_value = MagicMock()
+
+        mock_uploader = mock_uploader_cls.return_value
+        mock_uploader.upload.return_value = None
+
+        failed_a = UploadEntry("/local/a.txt", "/remote/a.txt")
+        failed_a.error = RuntimeError("network timeout")
+        failed_b = UploadEntry("/local/b.txt", "/remote/b.txt")
+        failed_b.error = ValueError("checksum mismatch")
+        mock_uploader.entries = [failed_a, failed_b]
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(["upload", "-s", "/local/dir", "/remote/dir"])
+        cmds["upload"].execute(args)
+
+        stderr = capsys.readouterr().err
+        assert "2 file(s) failed to upload" in stderr
+        assert "/local/a.txt -> /remote/a.txt: network timeout" in stderr
+        assert "/local/b.txt -> /remote/b.txt: checksum mismatch" in stderr
 
 
 class TestUrlCommand:

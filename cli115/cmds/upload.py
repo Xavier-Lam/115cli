@@ -122,6 +122,20 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         error = state.get("error")
         if isinstance(error, BaseException):
             raise error
+
+        failed_entries = [
+            entry for entry in uploader.entries if entry.error is not None
+        ]
+        self.warn("{0} file(s) failed to upload".format(len(failed_entries)))
+        for entry in failed_entries:
+            self.warn(
+                "- {0} -> {1}: {2}".format(
+                    os.fspath(entry.local_path),
+                    entry.remote_path,
+                    entry.error,
+                )
+            )
+
         if state.get("result"):
             self.output(format_entry(state["result"]), args)
 
