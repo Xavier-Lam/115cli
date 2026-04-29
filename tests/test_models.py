@@ -57,21 +57,37 @@ class TestProgress:
         receiver = MagicMock()
         p.on_change.connect(receiver)
         p.update(100)
-        receiver.assert_called_once_with(p)
+        receiver.assert_called_once()
+        args, kwargs = receiver.call_args
+        assert args == (p,)
+        assert kwargs == {
+            "delta": 100,
+            "new": 100,
+            "old": 0,
+            "completed": False,
+        }
 
     def test_on_change_signal_fired_on_complete(self):
         p = Progress(1000)
         receiver = MagicMock()
         p.on_change.connect(receiver)
         p.complete()
-        receiver.assert_called_once_with(p)
+        receiver.assert_called_once()
+        args, kwargs = receiver.call_args
+        assert args == (p,)
+        assert kwargs == {
+            "delta": 1000,
+            "new": 1000,
+            "old": 0,
+            "completed": True,
+        }
 
-    def test_on_change_signal_fired_on_failed(self):
+    def test_on_change_signal_not_fired_on_failed(self):
         p = Progress(1000)
         receiver = MagicMock()
         p.on_change.connect(receiver)
         p.failed()
-        receiver.assert_called_once_with(p)
+        receiver.assert_not_called()
 
     def test_context_manager_completes_on_success(self):
         with Progress(1000) as p:
@@ -92,87 +108,70 @@ class TestProgress:
 class TestUploadStatus:
     def test_initial_state(self):
         s = UploadStatus()
-        assert s.use_instant_upload is None
         assert s.is_instant_uploaded is None
         assert s.instant_upload_error is None
-        assert s.progress is None
         assert not s.is_completed
 
-    def test_use_instant_upload_setter_fires_signal(self):
+    def test_set_message_fires_signal(self):
         s = UploadStatus()
         receiver = MagicMock()
-        s.on_update.connect(receiver)
-        s.use_instant_upload = True
-        receiver.assert_called_once()
-        _, kwargs = receiver.call_args
-        assert kwargs["field"] == "use_instant_upload"
-        assert kwargs["value"] is True
+        s.on_message.connect(receiver)
 
-    def test_is_instant_uploaded_setter_fires_signal(self):
+        s.set_message("uploading...")
+
+        receiver.assert_called_once_with(s, message="uploading...")
+
+    def test_is_instant_uploaded_false_does_not_complete(self):
         s = UploadStatus()
-        receiver = MagicMock()
-        s.on_update.connect(receiver)
+        complete_receiver = MagicMock()
+        s.on_complete.connect(complete_receiver)
+
         s.is_instant_uploaded = False
-        receiver.assert_called_once()
-        _, kwargs = receiver.call_args
-        assert kwargs["field"] == "is_instant_uploaded"
-        assert kwargs["value"] is False
+
         assert not s.is_completed
+        complete_receiver.assert_not_called()
 
     def test_is_instant_uploaded_true_marks_completed(self):
         s = UploadStatus()
-        receiver = MagicMock()
-        s.on_complete.connect(receiver)
+        complete_receiver = MagicMock()
+        message_receiver = MagicMock()
+        s.on_complete.connect(complete_receiver)
+        s.on_message.connect(message_receiver)
 
         s.is_instant_uploaded = True
 
         assert s.is_completed
-        receiver.assert_called_once_with(s)
+        complete_receiver.assert_called_once_with(s)
+        message_receiver.assert_called_once_with(s, message="instant upload successful")
 
-    def test_instant_upload_error_setter_fires_signal(self):
+    def test_instant_upload_error_setter_fires_message_signal(self):
         s = UploadStatus()
         receiver = MagicMock()
-        s.on_update.connect(receiver)
+        s.on_message.connect(receiver)
         err = ValueError("oops")
+
         s.instant_upload_error = err
-        receiver.assert_called_once()
-        _, kwargs = receiver.call_args
-        assert kwargs["field"] == "instant_upload_error"
-        assert kwargs["value"] is err
 
-    def test_progress_setter_fires_signal(self):
+        assert s.instant_upload_error is err
+        receiver.assert_called_once_with(s, message="instant upload failed: oops")
+
+    def test_start_upload_emits_upload_signal(self):
         s = UploadStatus()
         receiver = MagicMock()
-        s.on_update.connect(receiver)
-        p = Progress(500)
-        s.progress = p
-        receiver.assert_called_once()
-        _, kwargs = receiver.call_args
-        assert kwargs["field"] == "progress"
-        assert kwargs["value"] is p
+        s.on_upload.connect(receiver)
 
-    def test_progress_change_propagates_to_on_update(self):
-        s = UploadStatus()
-        p = Progress(500)
-        s.progress = p
+        with s.start_upload(500) as progress:
+            assert progress.total_bytes == 500
 
-        receiver = MagicMock()
-        s.on_update.connect(receiver)
-        p.update(250)
-
-        receiver.assert_called_once()
-        _, kwargs = receiver.call_args
-        assert kwargs["field"] == "progress"
-        assert kwargs["value"] is p
+        receiver.assert_called_once_with(s, progress=progress)
 
     def test_progress_completion_marks_completed(self):
         s = UploadStatus()
-        p = Progress(500)
         receiver = MagicMock()
         s.on_complete.connect(receiver)
 
-        s.progress = p
-        p.update(500)
+        with s.start_upload(500) as progress:
+            progress.update(500)
 
         assert s.is_completed
         receiver.assert_called_once_with(s)
@@ -182,10 +181,10 @@ class TestUploadStatus:
         receiver = MagicMock()
         s.on_complete.connect(receiver)
 
-        p = Progress(500)
-        s.progress = p
         s.is_instant_uploaded = True
-        p.update(500)
+
+        with s.start_upload(500) as progress:
+            progress.update(500)
 
         receiver.assert_called_once_with(s)
 

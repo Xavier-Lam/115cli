@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -263,21 +264,36 @@ class Progress:
     def start(self) -> None:
         self._start_time = datetime.now()
 
-    def update(self, completed_bytes: int) -> None:
-        self._completed_bytes = completed_bytes
-        if self._completed_bytes >= self._total_bytes:
-            self._completed_bytes = self._total_bytes
-            self._end_time = datetime.now()
-        self.on_change.send(self)
+    def update(self, delta: int) -> None:
+        new = self._completed_bytes + delta
+        if new < self._total_bytes:
+            old = self._completed_bytes
+            self._completed_bytes += delta
+            self.on_change.send(
+                self,
+                delta=delta,
+                new=new,
+                old=old,
+                completed=False,
+            )
+        else:
+            self.complete()
 
     def complete(self) -> None:
+        old = self._completed_bytes
+        delta = self._total_bytes - old
         self._completed_bytes = self._total_bytes
         self._end_time = datetime.now()
-        self.on_change.send(self)
+        self.on_change.send(
+            self,
+            delta=delta,
+            new=self._total_bytes,
+            old=old,
+            completed=True,
+        )
 
     def failed(self) -> None:
         self._end_time = datetime.now()
-        self.on_change.send(self)
 
     def __enter__(self) -> Progress:
         self.start()
@@ -292,52 +308,50 @@ class Progress:
 
 class UploadStatus:
     def __init__(self) -> None:
-        self._use_instant_upload: bool | None = None
         self._is_instant_uploaded: bool | None = None
         self._instant_upload_error: Exception | None = None
-        self._progress: Progress | None = None
         self._is_completed: bool = False
-        self.on_update: Signal = Signal()
+        self.on_message: Signal = Signal()
+        self.on_upload: Signal = Signal()
         self.on_complete: Signal = Signal()
 
     @property
-    def use_instant_upload(self) -> bool | None:
-        return self._use_instant_upload
-
-    @use_instant_upload.setter
-    def use_instant_upload(self, value: bool | None) -> None:
-        self._use_instant_upload = value
-        self.on_update.send(self, field="use_instant_upload", value=value)
-
-    @property
     def is_instant_uploaded(self) -> bool | None:
+        """Whether the file has been instantly uploaded. ``None`` if not
+        determined yet (e.g. upload not started).
+        """
         return self._is_instant_uploaded
 
     @is_instant_uploaded.setter
     def is_instant_uploaded(self, value: bool | None) -> None:
         self._is_instant_uploaded = value
-        self.on_update.send(self, field="is_instant_uploaded", value=value)
-        value and self._complete()
+        if value:
+            self._complete()
+            self.set_message("instant upload successful")
 
     @property
     def instant_upload_error(self) -> Exception | None:
+        """The error encountered during instant upload, if any."""
         return self._instant_upload_error
 
     @instant_upload_error.setter
     def instant_upload_error(self, value: Exception | None) -> None:
         self._instant_upload_error = value
-        self.on_update.send(self, field="instant_upload_error", value=value)
+        self.set_message(f"instant upload failed: {value}")
 
-    @property
-    def progress(self) -> Progress | None:
-        return self._progress
+    def set_message(self, message: str) -> None:
+        self.on_message.send(self, message=message)
 
-    @progress.setter
-    def progress(self, value: Progress | None) -> None:
-        self._progress = value
-        if value is not None:
-            value.on_change.connect(self._emit_progress_update)
-        self.on_update.send(self, field="progress", value=value)
+    @contextmanager
+    def start_upload(self, file_size: int):
+        progress = Progress(file_size)
+        self.on_upload.send(self, progress=progress)
+        progress.on_change.connect(
+            lambda sender, completed, **_: completed and self._complete(),
+            weak=False,
+        )
+        self.set_message("uploading...")
+        yield progress
 
     @property
     def is_completed(self) -> bool:
@@ -347,10 +361,6 @@ class UploadStatus:
         if not self.is_completed:
             self._is_completed = True
             self.on_complete.send(self)
-
-    def _emit_progress_update(self, sender: Progress, **_) -> None:
-        self.on_update.send(self, field="progress", value=self._progress)
-        sender.is_completed() and self._complete()
 
 
 @dataclass(frozen=True)

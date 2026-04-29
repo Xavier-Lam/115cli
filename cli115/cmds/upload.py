@@ -9,6 +9,7 @@ import time
 
 from tqdm import tqdm
 
+from cli115.client.models import Progress
 from cli115.cmds.base import BaseCommand
 from cli115.cmds.formatter import PairFormatterMixin, format_entry, format_size
 from cli115.exceptions import CommandLineError
@@ -150,6 +151,28 @@ class UploadProgress:
         self.completed_bytes = 0
         self.instant_count = 0
 
+        self._current_entry: UploadEntry | None = None
+
+    @property
+    def current_entry(self) -> UploadEntry | None:
+        return self._current_entry
+
+    @current_entry.setter
+    def current_entry(self, entry: UploadEntry) -> None:
+        if not (self._current_entry is entry):
+            self._current_entry = entry
+
+            self.current_bar.reset(max(entry.size, 1))
+
+            self.overall_text.set_description_str(
+                "{0} ({1}/{2})".format(
+                    entry.local_path,
+                    self.completed_files,
+                    self.total_files,
+                ),
+                refresh=True,
+            )
+
     def init(self):
         self.uploader.on_entry_added.connect(self.on_added)
         self.started_at = time.monotonic()
@@ -199,35 +222,39 @@ class UploadProgress:
         self.create_progress_bars()
 
         for entry in entries:
-            self.connect_update_listener(entry)
+            self.connect_message_listener(entry)
+            self.connect_upload_listener(entry)
             self.connect_complete_listener(entry)
 
-    def connect_update_listener(self, entry: UploadEntry):
-        def listener(sender, **kw) -> None:
-            self.current_text.set_description_str(entry.local_path)
-            self.current_text.refresh()
+    def connect_message_listener(self, entry: UploadEntry):
+        def listener(sender, message) -> None:
+            self.current_entry = entry
+            self.current_text.set_description_str(message, refresh=True)
 
-            self.current_bar.total = max(entry.size, 1)
-            self.current_bar.n = 0
-            if entry.status.progress is not None:
-                self.current_bar.n = entry.status.progress.completed_bytes
-                if not entry.status.progress.is_completed():
-                    self.overall_bar.n = self.completed_bytes + self.current_bar.n
-            self.current_bar.refresh()
-            self.overall_bar.refresh()
+        entry.status.on_message.connect(listener, weak=False)
 
-        entry.status.on_update.connect(listener, weak=False)
+    def connect_upload_listener(self, entry: UploadEntry):
+        def listener(sender, progress: Progress) -> None:
+            self.current_bar.reset(max(entry.size, 1))
+
+            def on_progress(sender, delta: int, new: int, old: int, completed: bool):
+                self.current_bar.n = new
+                self.current_bar.refresh()
+                if not completed:
+                    self.overall_bar.n = self.completed_bytes + new
+                    self.overall_bar.refresh()
+
+            progress.on_change.connect(on_progress, weak=False)
+
+        entry.status.on_upload.connect(listener, weak=False)
 
     def connect_complete_listener(self, entry: UploadEntry):
-        def listener(sender, **kw) -> None:
+        def listener(sender) -> None:
+            self.current_entry = entry
+
             self.completed_files += 1
             if entry.status.is_instant_uploaded:
                 self.instant_count += 1
-
-            self.overall_text.set_description_str(
-                f"{self.completed_files}/{self.total_files}"
-            )
-            self.overall_text.refresh()
 
             self.completed_bytes += entry.size
             self.overall_bar.n = self.completed_bytes
@@ -236,42 +263,39 @@ class UploadProgress:
         entry.status.on_complete.connect(listener, weak=False)
 
     def create_progress_bars(self):
-        _PROGRESS_BAR_FORMAT = (
-            "{percentage:3.0f}%|{bar}| "
-            "{n_fmt}/{total_fmt} "
-            "[{elapsed}<{remaining}, {rate_fmt}]"
+        self.overall_text = tqdm(
+            total=0,
+            position=0,
+            dynamic_ncols=True,
+            bar_format="{desc}",
+            desc=f"processing... (0/{self.total_files})",
         )
-
-        self.current_text = tqdm(
-            total=0, position=0, dynamic_ncols=True, leave=False, bar_format="{desc}"
-        )
-        self.current_bar = tqdm(
-            total=1,
+        self.overall_bar = tqdm(
+            total=self.total_size,
             position=1,
             unit="B",
             unit_scale=True,
             unit_divisor=1024,
             dynamic_ncols=True,
             leave=False,
-            bar_format=_PROGRESS_BAR_FORMAT,
+            bar_format=("{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}]"),
         )
-        self.overall_text = tqdm(
-            total=0,
-            position=2,
-            dynamic_ncols=True,
-            leave=False,
-            bar_format="{desc}",
-            desc=f"0/{self.total_files}",
+        self.current_text = tqdm(
+            total=0, position=2, dynamic_ncols=True, leave=False, bar_format="{desc}"
         )
-        self.overall_bar = tqdm(
-            total=self.total_size,
+        self.current_bar = tqdm(
+            total=1,
             position=3,
             unit="B",
             unit_scale=True,
             unit_divisor=1024,
             dynamic_ncols=True,
             leave=False,
-            bar_format=_PROGRESS_BAR_FORMAT,
+            bar_format=(
+                "{percentage:3.0f}%|{bar}| "
+                "{n_fmt}/{total_fmt} "
+                "[{elapsed}<{remaining}, {rate_fmt}]"
+            ),
         )
 
     def __enter__(self):
