@@ -53,6 +53,10 @@ pip install 115cli
 115cli fetch /path/to/file.mp4
 115cli fetch /path/to/file.mp4 -o /local/save/path.mp4
 115cli fetch --id 1234567 -o /local/save/path.mp4
+# 递归下载文件夹, 并进行完整性校验
+115cli fetch /path/to/dir/ -o /local/save/dir/ --check-integrity
+# 下载文件黑白名单
+115cli fetch /path/to/dir/ -o /local/save/dir/ --include "**/*.mkv" --include "**/*.mp4" --exclude "secret/*"
 
 # 上传(支持秒传)
 115cli upload /local/file.txt /remote/dir/file.txt
@@ -129,9 +133,7 @@ tasks = client.download.list()
 
 项目仍在早期,计划包括但不限于:
 
-- 多线程下载加速
-- 回收站管理
-- 手机验证码登录 (补充 cookie 登录)
+- **二维码登录** - 实现基于二维码的认证, 方便登录而无需手动提取 cookie.
 
 ## 免责声明
 

@@ -53,6 +53,10 @@ After [authenticating](#authentication) with `115cli login`, you can use the `11
 115cli fetch /path/to/file.mp4
 115cli fetch /path/to/file.mp4 -o /local/save/path.mp4
 115cli fetch --id 1234567 -o /local/save/path.mp4
+# Download a folder recursively, with integrity check
+115cli fetch /path/to/dir/ -o /local/save/dir/ --check-integrity
+# Download with include/exclude patterns
+115cli fetch /path/to/dir/ -o /local/save/dir/ --include "**/*.mkv" --include "**/*.mp4" --exclude "secret/*"
 
 # Upload (support instant upload)
 115cli upload /local/file.txt /remote/dir/file.txt
@@ -131,9 +135,7 @@ tasks = client.download.list()
 
 The project aims to cover the core features of 115 cloud storage. Planned additions include:
 
-- **Multi-threaded download:** Multi-thread acceleration for the `115cli fetch` command.
-- **Recycle bin management:** List, restore, and permanently delete items from the recycle bin.
-- **Mobile phone authentication:** SMS-based login in addition to cookie auth.
+- **QRCode login** - Implementing QR code-based authentication for easier login without needing to manually extract cookies.
 
 ## Disclaimer
 
