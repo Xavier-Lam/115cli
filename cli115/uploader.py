@@ -143,25 +143,24 @@ class Uploader:
     def _upload_directory(
         self,
         local_path: str,
-        remote_path: str,
+        dest_path: str,
         *,
         no_target_dir: bool = False,
-        instant_only: int | None,
-        include: PathSpec | None,
-        exclude: PathSpec | None,
+        instant_only: int | None = None,
+        include: Sequence[str] | None = None,
+        exclude: Sequence[str] | None = None,
     ) -> Directory | None:
         entry = None
-        dest_path = remote_path
         try:
-            entry = self._client.file.stat(remote_path)
+            entry = self._client.file.stat(dest_path)
             if not entry.is_directory:
                 raise FileExistsError(
-                    f"cannot upload directory to a file path: {remote_path}"
+                    f"cannot upload directory to a file path: {dest_path}"
                 )
             # Remote exists as a directory: create a subdirectory with the local dir name.
             if not no_target_dir:
                 dir_name = os.path.basename(local_path)
-                dest_path = join_path(remote_path, dir_name)
+                dest_path = join_path(dest_path, dir_name)
         except FileNotFoundError:
             pass
 

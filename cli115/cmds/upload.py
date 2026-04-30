@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import argparse
 import os
-from threading import Event, Thread
 import time
 
 from tqdm import tqdm
 
 from cli115.client.models import Progress
-from cli115.cmds.base import BaseCommand
+from cli115.cmds.base import BaseCommand, WorkerCommand
 from cli115.cmds.formatter import PairFormatterMixin, format_entry
-from cli115.exceptions import CommandLineError
 from cli115.helpers import format_size, parse_size
 from cli115.uploader import UploadEntry, Uploader
 
 
-class UploadCommand(PairFormatterMixin, BaseCommand):
+class UploadCommand(PairFormatterMixin, WorkerCommand, BaseCommand):
     """Upload a local file or directory to the remote path."""
+
+    uploader: Uploader | None = None
 
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
@@ -86,47 +86,20 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
         )
 
     def execute(self, args: argparse.Namespace) -> None:
-        uploader = Uploader(self._create_client(), dry_run=args.dry_run)
-
-        done = Event()
-        state: dict[str, object] = {}
-
-        def worker() -> None:
-            try:
-                state["result"] = uploader.upload(
-                    args.local_path,
-                    args.remote_path,
-                    instant_only=args.instant_only,
-                    include=args.include,
-                    exclude=args.exclude,
-                    no_target_dir=args.no_target_directory,
-                )
-            except BaseException as exc:
-                state["error"] = exc
-            finally:
-                done.set()
+        self.uploader = Uploader(self._create_client(), dry_run=args.dry_run)
 
         with UploadProgress(
-            uploader,
+            self.uploader,
             show_plan=args.plan or args.dry_run,
             show_progress=not args.silent and not args.dry_run,
         ):
-            Thread(target=worker, daemon=True, name="upload-worker").start()
-
-            try:
-                while not done.wait(timeout=0.1):
-                    pass
-            except KeyboardInterrupt as exc:
-                raise CommandLineError("upload cancelled by user") from exc
-
-        error = state.get("error")
-        if isinstance(error, BaseException):
-            raise error
+            result = self.run_worker(args)
 
         failed_entries = [
-            entry for entry in uploader.entries if entry.error is not None
+            entry for entry in self.uploader.entries if entry.error is not None
         ]
-        self.warn("{0} file(s) failed to upload".format(len(failed_entries)))
+        if failed_entries:
+            self.warn("{0} file(s) failed to upload".format(len(failed_entries)))
         for entry in failed_entries:
             self.warn(
                 "- {0} -> {1}: {2}".format(
@@ -136,8 +109,18 @@ class UploadCommand(PairFormatterMixin, BaseCommand):
                 )
             )
 
-        if state.get("result"):
-            self.output(format_entry(state["result"]), args)
+        if result:
+            self.output(format_entry(result), args)
+
+    def worker(self, args):
+        return self.uploader.upload(
+            args.local_path,
+            args.remote_path,
+            instant_only=args.instant_only,
+            include=args.include,
+            exclude=args.exclude,
+            no_target_dir=args.no_target_directory,
+        )
 
 
 class UploadProgress:
@@ -194,10 +177,10 @@ class UploadProgress:
     def close(self):
         self.ended_at = time.monotonic()
         if self.overall_bar:
-            self.current_text.close()
-            self.current_bar.close()
             self.overall_text.close()
             self.overall_bar.close()
+            self.current_text.close()
+            self.current_bar.close()
             print()  # ensure progress bars are cleared before final output
 
     def report(self):
@@ -281,6 +264,7 @@ class UploadProgress:
             total=0,
             position=0,
             dynamic_ncols=True,
+            leave=False,
             bar_format="{desc}",
             desc=f"processing... (0/{self.total_files})",
         )

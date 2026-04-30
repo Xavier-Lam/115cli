@@ -5,14 +5,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import argparse
 from configparser import ConfigParser
+from multiprocessing import Event
 import sys
+from threading import Thread
 from typing import Sequence, TypeVar
 
 from cli115.auth.cookie import CookieAuth
 from cli115.client import Client, create_client
 from cli115.credentials import CredentialManager
 from cli115.exceptions import CommandLineError
-
 
 T = TypeVar("T")
 
@@ -131,3 +132,33 @@ class MultiCommand(BaseCommand, ABC):
 
     def execute(self, args: argparse.Namespace) -> None:
         self._subcmd_instances[args.action].execute(args)
+
+
+class WorkerCommand(BaseCommand, ABC):
+    @abstractmethod
+    def worker(self, args: argparse.Namespace):
+        pass
+
+    def run_worker(self, args: argparse.Namespace):
+        done = Event()
+        state: dict[str, object] = {}
+
+        def worker():
+            try:
+                state["result"] = self.worker(args)
+            except BaseException as exc:
+                state["error"] = exc
+            finally:
+                done.set()
+
+        Thread(target=worker, daemon=True).start()
+
+        try:
+            while not done.wait(timeout=0.1):
+                pass
+        except KeyboardInterrupt as exc:
+            raise CommandLineError("process cancelled by user") from exc
+
+        if "error" in state:
+            raise state["error"]
+        return state["result"]
