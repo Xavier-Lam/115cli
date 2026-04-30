@@ -127,7 +127,7 @@ class TestFetchCommand:
         mock_create.return_value = self._make_client_mock()
 
         parser, cmds = _build_parser()
-        args = parser.parse_args(["fetch", "/remote/remote.bin"])
+        args = parser.parse_args(["fetch", "/remote/remote.bin", "--silent"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_dir = os.getcwd()
@@ -148,7 +148,9 @@ class TestFetchCommand:
         parser, cmds = _build_parser()
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = os.path.join(tmpdir, "custom.bin")
-            args = parser.parse_args(["fetch", "/remote/remote.bin", "-o", out_path])
+            args = parser.parse_args(
+                ["fetch", "/remote/remote.bin", "-o", out_path, "--silent"]
+            )
             cmds["fetch"].execute(args)
             assert os.path.exists(out_path)
 
@@ -158,34 +160,36 @@ class TestFetchCommand:
 
         parser, cmds = _build_parser()
         with tempfile.TemporaryDirectory() as tmpdir:
-            args = parser.parse_args(["fetch", "/remote/remote.bin", "-o", tmpdir])
+            args = parser.parse_args(
+                ["fetch", "/remote/remote.bin", "-o", tmpdir, "--silent"]
+            )
             cmds["fetch"].execute(args)
             assert os.path.exists(os.path.join(tmpdir, "remote.bin"))
 
-    @patch("cli115.cmds.fetch.sha1_file")
+    @patch("cli115.fetcher.sha1_file")
     @patch.object(FetchCommand, "_create_client")
-    def test_fetch_check_integrity_passes(self, mock_create, mock_sha1, capsys):
+    def test_fetch_check_integrity_passes(self, mock_create, mock_sha1):
         file = _make_file(name="remote.bin", size=1024)
         mock_create.return_value = self._make_client_mock(file=file)
         mock_sha1.return_value = (file.sha1, file.size)
 
         parser, cmds = _build_parser()
-        args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
+        args = parser.parse_args(
+            ["fetch", "/remote/remote.bin", "--check-integrity", "--silent"]
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_dir = os.getcwd()
             os.chdir(tmpdir)
             try:
                 cmds["fetch"].execute(args)
-                assert "Checking file integrity" in capsys.readouterr().out
+                assert mock_sha1.called
             finally:
                 os.chdir(orig_dir)
 
-    @patch("cli115.cmds.fetch.sha1_file")
+    @patch("cli115.fetcher.sha1_file")
     @patch.object(FetchCommand, "_create_client")
-    def test_fetch_check_integrity_enabled_by_config(
-        self, mock_create, mock_sha1, capsys
-    ):
+    def test_fetch_check_integrity_enabled_by_config(self, mock_create, mock_sha1):
         cfg = load_config()
         cfg["download"]["check_integrity"] = "true"
         file = _make_file(name="remote.bin", size=1024)
@@ -193,21 +197,19 @@ class TestFetchCommand:
         mock_sha1.return_value = (file.sha1, file.size)
 
         parser, cmds = build_parser(cfg, CredentialManager(cfg))
-        args = parser.parse_args(["fetch", "/remote/remote.bin"])
+        args = parser.parse_args(["fetch", "/remote/remote.bin", "--silent"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_dir = os.getcwd()
             os.chdir(tmpdir)
             try:
                 cmds["fetch"].execute(args)
-                output = capsys.readouterr().out
-                assert "Checking file integrity" in output
                 assert mock_sha1.called
             finally:
                 os.chdir(orig_dir)
 
     @patch.object(FetchCommand, "_create_client")
-    def test_fetch_by_id(self, mock_create, capsys):
+    def test_fetch_by_id(self, mock_create):
         file = _make_file(name="remote.bin", size=1024)
         mock_client = MagicMock()
         mock_client.file.id.return_value = file
@@ -215,7 +217,7 @@ class TestFetchCommand:
         mock_create.return_value = mock_client
 
         parser, cmds = _build_parser()
-        args = parser.parse_args(["fetch", "--id", "200"])
+        args = parser.parse_args(["fetch", "--id", "200", "--silent"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_dir = os.getcwd()
@@ -228,20 +230,22 @@ class TestFetchCommand:
             finally:
                 os.chdir(orig_dir)
 
-    @patch("cli115.cmds.fetch.sha1_file")
+    @patch("cli115.fetcher.sha1_file")
     @patch.object(FetchCommand, "_create_client")
     def test_fetch_check_integrity_failed(self, mock_create, mock_sha1):
         file = _make_file(name="remote.bin", size=1024)
         mock_create.return_value = self._make_client_mock(file=file)
         mock_sha1.return_value = (file.sha1, 512)
         parser, cmds = _build_parser()
-        args = parser.parse_args(["fetch", "/remote/remote.bin", "--check-integrity"])
+        args = parser.parse_args(
+            ["fetch", "/remote/remote.bin", "--check-integrity", "--silent"]
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_dir = os.getcwd()
             os.chdir(tmpdir)
             try:
-                with pytest.raises(CommandLineError, match="size mismatch"):
+                with pytest.raises(ValueError, match="size mismatch"):
                     cmds["fetch"].execute(args)
             finally:
                 os.chdir(orig_dir)
@@ -254,10 +258,66 @@ class TestFetchCommand:
             orig_dir = os.getcwd()
             os.chdir(tmpdir)
             try:
-                with pytest.raises(CommandLineError, match="sha1 mismatch"):
+                with pytest.raises(ValueError, match="sha1 mismatch"):
                     cmds["fetch"].execute(args)
             finally:
                 os.chdir(orig_dir)
+
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_dry_run_skips_download(self, mock_create):
+        file = _make_file(name="remote.bin", size=1024)
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = file
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            ["fetch", "/remote/remote.bin", "--dry-run", "--silent"]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_dir = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                cmds["fetch"].execute(args)
+                mock_client.file.open.assert_not_called()
+                assert not os.path.exists("remote.bin")
+            finally:
+                os.chdir(orig_dir)
+
+    @patch("cli115.cmds.fetch.Fetcher.fetch")
+    @patch.object(FetchCommand, "_create_client")
+    def test_fetch_forwards_directory_options(self, mock_create, mock_fetch):
+        mock_fetch.return_value = os.path.abspath("download-output")
+        directory = _make_dir(name="photos", id="300")
+
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = directory
+        mock_create.return_value = mock_client
+
+        parser, cmds = _build_parser()
+        args = parser.parse_args(
+            [
+                "fetch",
+                "/remote/photos",
+                "-o",
+                "local-dest",
+                "--include",
+                "**/*.jpg",
+                "--exclude",
+                "**/*.tmp",
+                "-T",
+                "--dry-run",
+                "--silent",
+            ]
+        )
+        cmds["fetch"].execute(args)
+
+        assert mock_fetch.call_count == 1
+        call = mock_fetch.call_args
+        assert call.kwargs["include"] == ["**/*.jpg"]
+        assert call.kwargs["exclude"] == ["**/*.tmp"]
+        assert call.kwargs["no_target_dir"] is True
 
 
 class TestFindCommand:
