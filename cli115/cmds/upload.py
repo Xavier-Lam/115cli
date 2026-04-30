@@ -11,9 +11,9 @@ from tqdm import tqdm
 
 from cli115.client.models import Progress
 from cli115.cmds.base import BaseCommand
-from cli115.cmds.formatter import PairFormatterMixin, format_entry, format_size
+from cli115.cmds.formatter import PairFormatterMixin, format_entry
 from cli115.exceptions import CommandLineError
-from cli115.helpers import parse_size
+from cli115.helpers import format_size, parse_size
 from cli115.uploader import UploadEntry, Uploader
 
 

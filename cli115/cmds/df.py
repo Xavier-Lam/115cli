@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 
 from cli115.cmds.base import BaseCommand
-from cli115.cmds.formatter import format_size, PairFormatterMixin
+from cli115.cmds.formatter import PairFormatterMixin
+from cli115.helpers import format_size
 
 
 class DfCommand(PairFormatterMixin, BaseCommand):

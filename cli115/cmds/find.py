@@ -6,7 +6,8 @@ import argparse
 
 from cli115.client import File, FileSystemEntry
 from cli115.cmds.base import PaginationCommand
-from cli115.cmds.formatter import ListFormatterMixin, format_size
+from cli115.cmds.formatter import ListFormatterMixin
+from cli115.helpers import format_size
 
 
 def _find_record(entry: FileSystemEntry) -> list[tuple[str, object]]:

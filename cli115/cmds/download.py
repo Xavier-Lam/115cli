@@ -6,13 +6,9 @@ import argparse
 
 from cli115.client.models import CloudTask, TaskFilter, TaskStatus
 from cli115.cmds.base import BaseCommand, MultiCommand, PaginationCommand
-from cli115.cmds.formatter import (
-    format_entry,
-    format_size,
-    ListFormatterMixin,
-    PairFormatterMixin,
-)
+from cli115.cmds.formatter import format_entry, ListFormatterMixin, PairFormatterMixin
 from cli115.exceptions import CommandLineError
+from cli115.helpers import format_size
 
 
 _STATUS_LABELS = {

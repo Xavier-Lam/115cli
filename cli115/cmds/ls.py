@@ -7,7 +7,7 @@ import sys
 
 from cli115.client import Directory, File, SortField, SortOrder
 from cli115.cmds.base import PaginationCommand
-from cli115.cmds.formatter import format_size
+from cli115.helpers import format_size
 
 
 _SORT_CHOICES = {

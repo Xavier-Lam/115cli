@@ -82,6 +82,13 @@ def parse_size(s: str | int) -> int:
 _CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB
 
 
+def format_size(size: int) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
 def sha1_file(file: BinaryIO) -> tuple[str, int]:
     file.seek(0)
     try:

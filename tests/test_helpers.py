@@ -1,6 +1,12 @@
 import pytest
 
-from cli115.helpers import join_path, normalize_path, parse_cookie_string, parse_size
+from cli115.helpers import (
+    format_size,
+    join_path,
+    normalize_path,
+    parse_cookie_string,
+    parse_size,
+)
 
 
 class TestJoinPath:
@@ -57,6 +63,18 @@ class TestParseCookieString:
         result = parse_cookie_string(cookie)
         assert len(result) == 5
         assert result["OTHER"] == "x"
+
+
+class TestFormatSize:
+    def test_formats_bytes(self):
+        assert format_size(536) == "536 B"
+
+    def test_formats_kilobytes(self):
+        assert format_size(1536) == "1.5 KB"
+
+    def test_petabyte_size_uses_tb_label(self):
+        result = format_size(1024**5)
+        assert result == "1024.0 TB"
 
 
 class TestParseSize:

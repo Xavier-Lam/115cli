@@ -26,15 +26,6 @@ class ListFormat(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-def format_size(size: int) -> str:
-    """Format a byte count into a human-readable string (e.g. ``1.0 KB``)."""
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size < 1024:
-            return f"{size} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} PB"
-
-
 def format_entry(entry: FileSystemEntry) -> list[tuple[str, object]]:
     """Build a canonical list of key-value pairs for any ``FileSystemEntry``."""
     from cli115.client.base import Directory, File
