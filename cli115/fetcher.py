@@ -21,6 +21,7 @@ class DownloadStatus:
         self._is_completed: bool = False
         self.on_message: Signal = Signal()
         self.on_download: Signal = Signal()
+        self.on_integrity_check: Signal = Signal()
         self.on_complete: Signal = Signal()
 
     @property
@@ -35,6 +36,13 @@ class DownloadStatus:
         progress = Progress(file_size)
         self.on_download.send(self, progress=progress)
         self.set_message("downloading...")
+        yield progress
+
+    @contextmanager
+    def start_integrity_check(self, file_size: int):
+        progress = Progress(file_size)
+        self.on_integrity_check.send(self, progress=progress)
+        self.set_message("checking file integrity...")
         yield progress
 
     def complete(self) -> None:
@@ -238,8 +246,11 @@ class Fetcher:
                 status.complete()
 
                 if check_integrity:
-                    status.set_message("checking file integrity...")
-                    sha1, size = sha1_file(local_file)
+                    with (
+                        status.start_integrity_check(entry.size) as progress,
+                        progress.patch_file(local_file),
+                    ):
+                        sha1, size = sha1_file(local_file)
                     if size != entry.size:
                         raise ValueError(
                             f"size mismatch: expected {entry.size}, got {size}"

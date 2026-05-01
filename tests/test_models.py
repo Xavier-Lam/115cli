@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from cli115.client.models import Progress, UploadStatus
-from cli115.client.webapi.file import patch_filelike
 
 
 class TestProgress:
@@ -195,7 +194,7 @@ class TestPatchFilelike:
         file = io.BytesIO(data)
         p = Progress(len(data))
 
-        with patch_filelike(file, p):
+        with p.patch_file(file):
             chunk = file.read(5)
 
         assert chunk == b"hello"
@@ -206,7 +205,7 @@ class TestPatchFilelike:
         file = io.BytesIO(data)
         p = Progress(len(data))
 
-        with patch_filelike(file, p):
+        with p.patch_file(file):
             chunk = file.read()
 
         assert chunk == data
@@ -218,7 +217,7 @@ class TestPatchFilelike:
         original_read = file.read
         p = Progress(len(data))
 
-        with patch_filelike(file, p):
+        with p.patch_file(file):
             patched_read = file.read
             assert patched_read is not original_read
 
@@ -231,7 +230,7 @@ class TestPatchFilelike:
         p = Progress(len(data))
 
         with pytest.raises(RuntimeError):
-            with patch_filelike(file, p):
+            with p.patch_file(file):
                 raise RuntimeError("error during upload")
 
         assert file.read == original_read
@@ -243,7 +242,7 @@ class TestPatchFilelike:
         receiver = MagicMock()
         p.on_change.connect(receiver)
 
-        with patch_filelike(file, p):
+        with p.patch_file(file):
             file.read(3)
             file.read(2)
 
@@ -254,7 +253,7 @@ class TestPatchFilelike:
         file = io.BytesIO(data)
         p = Progress(len(data))
 
-        with patch_filelike(file, p):
+        with p.patch_file(file):
             file.read(4)
             file.read(6)
 

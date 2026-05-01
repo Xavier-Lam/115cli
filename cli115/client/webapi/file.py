@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
 from typing import BinaryIO
 
 from cli115.api.web.p115client import check_response
@@ -19,7 +18,6 @@ from cli115.client.models import (
     File,
     FileSystemEntry,
     Pagination,
-    Progress,
     SortField,
     SortOrder,
     UploadStatus,
@@ -29,27 +27,10 @@ from cli115.client.webapi.base import BaseClient
 from cli115.exceptions import InstantUploadNotAvailableError
 from cli115.helpers import normalize_path, sha1_file, join_path
 
-
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
 )
-
-
-@contextmanager
-def patch_filelike(file: BinaryIO, progress: Progress):
-    original_read = file.read
-
-    def patched_read(size=-1) -> bytes:
-        chunk = original_read(size)
-        progress.update(len(chunk))
-        return chunk
-
-    file.read = patched_read
-    try:
-        yield
-    finally:
-        file.read = original_read
 
 
 class WebAPIFileClient(FileClient, BaseClient):
@@ -292,7 +273,7 @@ class WebAPIFileClient(FileClient, BaseClient):
             file.set_stream(True)  # use streaming upload for RemoteFile
 
         status.is_instant_uploaded = False
-        with status.start_upload(file_size) as progress, patch_filelike(file, progress):
+        with status.start_upload(file_size) as progress, progress.patch_file(file):
             resp = self._api.upload_file_sample(file, pid=dir_id, filename=filename)
         resp = check_response(resp)
         data = resp.get("data", {})

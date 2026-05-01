@@ -6,9 +6,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import BinaryIO
 
 from blinker import Signal
-
 
 # region Enums
 
@@ -294,6 +294,21 @@ class Progress:
 
     def failed(self) -> None:
         self._end_time = datetime.now()
+
+    @contextmanager
+    def patch_file(self, file: BinaryIO):
+        original_read = file.read
+
+        def patched_read(size=-1) -> bytes:
+            chunk = original_read(size)
+            self.update(len(chunk))
+            return chunk
+
+        file.read = patched_read
+        try:
+            yield
+        finally:
+            file.read = original_read
 
     def __enter__(self) -> Progress:
         self.start()

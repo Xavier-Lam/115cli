@@ -34,7 +34,10 @@ class FetchCommand(WorkerCommand, BaseCommand):
             "--chunk-size",
             type=parse_size,
             default=format_size(DEFAULT_CHUNK_SIZE),
-            help=f"Chunk size for downloading (default: {format_size(DEFAULT_CHUNK_SIZE)}, e.g. '4MB', '1048576')",
+            help=(
+                "Chunk size for downloading "
+                f"(default: {format_size(DEFAULT_CHUNK_SIZE)}, e.g. '4MB', '1048576')"
+            ),
         )
         parser.add_argument(
             "--check-integrity",
@@ -262,6 +265,7 @@ class FetchProgress:
         for entry in entries:
             self.connect_message_listener(entry)
             self.connect_download_listener(entry)
+            self.connect_integrity_listener(entry)
             self.connect_complete_listener(entry)
 
     def connect_message_listener(self, entry: FetchEntry):
@@ -285,6 +289,18 @@ class FetchProgress:
             progress.on_change.connect(on_progress, weak=False)
 
         entry.status.on_download.connect(listener, weak=False)
+
+    def connect_integrity_listener(self, entry: FetchEntry):
+        def listener(sender, progress: Progress) -> None:
+            self.current_bar.reset(max(entry.remote_entry.size, 1))
+
+            def on_progress(sender, delta: int, new: int, old: int, completed: bool):
+                self.current_bar.n = new
+                self.current_bar.refresh()
+
+            progress.on_change.connect(on_progress, weak=False)
+
+        entry.status.on_integrity_check.connect(listener, weak=False)
 
     def connect_complete_listener(self, entry: FetchEntry):
         def listener(sender) -> None:
