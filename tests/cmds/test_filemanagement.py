@@ -317,7 +317,58 @@ class TestFetchCommand:
         call = mock_fetch.call_args
         assert call.kwargs["include"] == ["**/*.jpg"]
         assert call.kwargs["exclude"] == ["**/*.tmp"]
-        assert call.kwargs["no_target_dir"] is True
+        assert call.args[1] == "local-dest"
+
+    @patch("cli115.cmds.fetch.Fetcher.fetch")
+    @patch.object(FetchCommand, "_create_client")
+    def test_no_target_directory_output_resolution(
+        self, mock_create, mock_fetch, tmp_path
+    ):
+        existing_dir = str(tmp_path)
+        nonexistent = str(tmp_path / "new-dest")
+
+        cases = [
+            (
+                _make_file("data.bin"),
+                existing_dir,
+                False,
+                os.path.join(existing_dir, "data.bin"),
+            ),
+            (
+                _make_file("data.bin"),
+                existing_dir,
+                True,
+                os.path.join(existing_dir, "data.bin"),
+            ),
+            (
+                _make_dir("photos"),
+                existing_dir,
+                False,
+                os.path.join(existing_dir, "photos"),
+            ),
+            (_make_dir("photos"), existing_dir, True, existing_dir),
+            (_make_file("data.bin"), nonexistent, False, nonexistent),
+            (_make_file("data.bin"), nonexistent, True, nonexistent),
+            (_make_dir("photos"), nonexistent, True, nonexistent),
+            (_make_dir("photos"), nonexistent, True, nonexistent),
+        ]
+
+        mock_fetch.return_value = None
+        parser, cmds = _build_parser()
+
+        for remote_entry, dest, use_T, expected in cases:
+            mock_client = MagicMock()
+            mock_client.file.stat.return_value = remote_entry
+            mock_create.return_value = mock_client
+            mock_fetch.reset_mock()
+
+            cmd_args = ["fetch", "/remote/src", "-o", dest, "--dry-run", "--silent"]
+            if use_T:
+                cmd_args.append("-T")
+            args = parser.parse_args(cmd_args)
+            cmds["fetch"].execute(args)
+
+            assert mock_fetch.call_args.args[1] == expected
 
 
 class TestFindCommand:

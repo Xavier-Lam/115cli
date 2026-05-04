@@ -92,25 +92,19 @@ class Fetcher:
         check_integrity: bool = False,
         include: Sequence[str] | None = None,
         exclude: Sequence[str] | None = None,
-        no_target_dir: bool = False,
     ) -> str | None:
         """Fetch a remote file or directory to a local destination path.
 
         Args:
             remote_entry: Remote file or directory entry to fetch.
             local_path: Local destination path. For files, this is the output
-                file path. For directories, this is the destination directory;
-                when it already exists and ``no_target_dir`` is ``False``, the
-                remote directory name is appended.
+                file path. For directories, this is the destination directory.
             check_integrity: When ``True``, verify downloaded files by size and
                 SHA-1.
             include: Optional glob patterns used to include files when fetching
                 a directory.
             exclude: Optional glob patterns used to exclude files when fetching
                 a directory.
-            no_target_dir: When ``True`` and fetching a directory, place files
-                directly under ``local_path`` without creating a subdirectory
-                named after the remote directory.
 
         Returns:
             The resolved local destination path, or ``None`` in dry-run mode.
@@ -123,20 +117,21 @@ class Fetcher:
 
         local_path = os.path.abspath(local_path)
         if remote_entry.is_directory:
-            return self._fetch_directory(
+            self._fetch_directory(
                 remote_entry,
                 local_path,
                 check_integrity=check_integrity,
                 include=include,
                 exclude=exclude,
-                no_target_dir=no_target_dir,
             )
         else:
-            return self._fetch_file(
+            self._fetch_file(
                 remote_entry,
                 local_path,
                 check_integrity=check_integrity,
             )
+        if not self.dry_run:
+            return local_path
 
     def _fetch_file(
         self,
@@ -157,8 +152,6 @@ class Fetcher:
                 status=entry.status,
             )
 
-        return local_path
-
     def _fetch_directory(
         self,
         remote_entry: Directory,
@@ -167,12 +160,9 @@ class Fetcher:
         check_integrity: bool = False,
         include: Sequence[str] | None = None,
         exclude: Sequence[str] | None = None,
-        no_target_dir: bool = False,
     ) -> str | None:
         if os.path.isfile(dest_path):
             raise FileExistsError(f"cannot fetch directory to a file path: {dest_path}")
-        if os.path.isdir(dest_path) and not no_target_dir:
-            dest_path = os.path.join(dest_path, remote_entry.name)
 
         include_spec = PathSpec.from_lines("gitignore", include) if include else None
         exclude_spec = PathSpec.from_lines("gitignore", exclude) if exclude else None
@@ -203,8 +193,6 @@ class Fetcher:
                     )
                 except Exception as exc:
                     entry.error = exc
-
-        return dest_path
 
     def _download_entry(
         self,

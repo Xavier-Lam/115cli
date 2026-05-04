@@ -159,13 +159,11 @@ class TestFetchDirectory:
         )
 
         output_dir = tmp_path / "downloads"
-        output_dir.mkdir()
 
         fetcher = Fetcher(client)
-        result = fetcher.fetch(root, str(output_dir))
+        fetcher.fetch(root, str(output_dir))
 
-        expected_root = output_dir / "root"
-        assert result == str(expected_root.resolve())
+        expected_root = output_dir
         assert (expected_root / "README.md").read_bytes() == root_file_content
         assert (expected_root / "docs").is_dir()
         assert (expected_root / "docs" / "guide.txt").read_bytes() == doc_file_content
@@ -226,49 +224,21 @@ class TestFetchDirectory:
         )
 
         output_dir = tmp_path / "downloads"
-        output_dir.mkdir()
 
         fetcher = Fetcher(client)
-        result = fetcher.fetch(
+        fetcher.fetch(
             root,
             str(output_dir),
             include=["**/*.txt"],
             exclude=["sub/**"],
         )
 
-        expected_root = output_dir / "root"
-        assert result == str(expected_root.resolve())
+        expected_root = output_dir
         assert (expected_root / "keep.txt").exists()
         assert not (expected_root / "skip.log").exists()
         assert not (expected_root / "sub" / "nested.txt").exists()
         assert client.file.open.call_count == 1
         assert len(fetcher.entries) == 1
-
-    def test_fetch_directory_no_target_dir(self, tmp_path):
-        root = make_dir(name="root", id="30", path="/remote/root")
-        one_file = make_file(
-            name="one.txt",
-            id="31",
-            parent_id="30",
-            path="/remote/root/one.txt",
-            size=3,
-            sha1=_sha1(b"one"),
-        )
-
-        client = _make_directory_client({root.id: [one_file]})
-
-        output_dir = tmp_path / "dest"
-        output_dir.mkdir()
-
-        fetcher = Fetcher(client, dry_run=True)
-        result = fetcher.fetch(root, str(output_dir), no_target_dir=True)
-
-        assert result == str(output_dir.resolve())
-        assert len(fetcher.entries) == 1
-        assert fetcher.entries[0].local_path == os.path.join(
-            str(output_dir.resolve()), "one.txt"
-        )
-        client.file.open.assert_not_called()
 
     def test_fetch_directory_error(self, tmp_path):
         root = make_dir(name="root", id="40", path="/remote/root")
@@ -298,9 +268,8 @@ class TestFetchDirectory:
         output_dir = tmp_path / "out"
 
         fetcher = Fetcher(client)
-        result = fetcher.fetch(root, str(output_dir), no_target_dir=True)
+        fetcher.fetch(root, str(output_dir))
 
-        assert result == str(output_dir.resolve())
         by_id = {entry.remote_entry.id: entry for entry in fetcher.entries}
         assert str(by_id[bad_file.id].error) == "download failed"
         assert by_id[ok_file.id].error is None

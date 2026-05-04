@@ -149,7 +149,8 @@ class FetchCommand(WorkerCommand, BaseCommand):
         if not output:
             output = info.name
         elif os.path.isdir(output):
-            output = os.path.join(output, info.name)
+            if not info.is_directory or not args.no_target_directory:
+                output = os.path.join(output, info.name)
 
         check_integrity = args.check_integrity or self.cfg.getboolean(
             "download", "check_integrity", fallback=False
@@ -161,7 +162,6 @@ class FetchCommand(WorkerCommand, BaseCommand):
             check_integrity=check_integrity,
             include=args.include,
             exclude=args.exclude,
-            no_target_dir=args.no_target_directory,
         )
 
 
