@@ -33,12 +33,17 @@ class TestCreateDirectory:
 
     def test_create_existing_directory_raises(self):
         client = make_client()
-        client.file._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
-        client.file._api.fs_mkdir.return_value = {
-            "state": False,
-            "errno": 20004,
-            "error": "directory already exists",
-        }
+
+        def mock_request(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/files/getid"):
+                resp.json.return_value = {"id": "123"}
+            if url.endswith("/files/add"):
+                raise FileExistsError("directory already exists")
+            return resp
+
+        client.file._client.get.side_effect = mock_request
+        client.file._client.post.side_effect = mock_request
         with pytest.raises(FileExistsError):
             client.file.create_directory("/parent/existing")
 
@@ -47,12 +52,17 @@ class TestCreateDirectory:
         # via stat rather than raising FileExistsError.
         client = make_client()
         existing = make_dir(name="existing", id="999", path="/parent/existing")
-        client.file._api.fs_dir_getid.return_value = {"state": True, "id": "123"}
-        client.file._api.fs_mkdir.return_value = {
-            "state": False,
-            "errno": 20004,
-            "error": "directory already exists",
-        }
+
+        def mock_request(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/files/getid"):
+                resp.json.return_value = {"id": "123"}
+            if url.endswith("/files/add"):
+                raise FileExistsError("directory already exists")
+            return resp
+
+        client.file._client.get.side_effect = mock_request
+        client.file._client.post.side_effect = mock_request
         client.file.stat = MagicMock(return_value=existing)
         result = client.file.create_directory("/parent/existing", parents=True)
         assert result is existing

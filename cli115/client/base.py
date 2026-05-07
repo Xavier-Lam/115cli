@@ -25,8 +25,7 @@ from cli115.client.models import (
 )
 from cli115.client.lazy import LazyPathCollection, LazyCollection
 
-
-DEFAULT_PAGE_SIZE = 115  # Default number of items to return in list operations
+DEFAULT_PAGE_SIZE = 200  # Default number of items to return in list operations
 MAX_PAGE_SIZE = 1150  # 1150 is the maximum page size allowed by the API
 MIN_INSTANT_UPLOAD_SIZE = 2 * 1024 * 1024  # Minimum file size for instant upload
 
@@ -109,22 +108,6 @@ class DownloadClient(ABC):
 
         Returns:
             A tuple of (tasks, pagination).
-        """
-
-    @abstractmethod
-    def add_url(
-        self, url: str, *, dest_dir: str | Directory | None = None
-    ) -> CloudTask:
-        """Add a single URL as a cloud download task.
-
-        Args:
-            url: Download URL, magnet link, or ed2k link.
-            dest_dir: Optional destination directory path or
-                :class:`Directory` object. If ``None``, uses the
-                default cloud download folder.
-
-        Returns:
-            The created CloudTask.
         """
 
     @abstractmethod

@@ -2,6 +2,7 @@
 
 ## Code Style
 
+- In the long run, the project will get rid of the p115client module. All new code should use `client` to make API calls.
 - Code including tests should be maintainable and consistent. Read existing code carefully before making changes and follow the existing style and structure.
 - Docstring for private methods or functions is not needed unless the logic is complex.
 - Log messages, exception messages should *NOT* be capitalized and *NOT* end with a period, except for a long message with multiple sentences.

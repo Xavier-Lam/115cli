@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cli115.api import endpoint
 from cli115.api.web.p115client import check_response
 from cli115.client.base import DownloadClient
 from cli115.client.models import (
@@ -13,15 +14,20 @@ from cli115.client.models import (
 from cli115.client.webapi.base import BaseClient
 from cli115.client.utils import parse_ts
 
+ENDPOINT = endpoint.LIXIAN + "/web/lixian/"
+
 
 class WebAPIDownloadClient(DownloadClient, BaseClient):
 
     def quota(self) -> DownloadQuota:
-        resp = self._api.offline_quota_info()
-        resp = check_response(resp)
+        resp = self._client.get(
+            ENDPOINT,
+            params={"ac": "get_quota_info"},
+        )
+        data = resp.json()
         return DownloadQuota(
-            quota=int(resp.get("quota", 0)),
-            total=int(resp.get("total", 0)),
+            quota=int(data.get("quota", 0)),
+            total=int(data.get("total", 0)),
         )
 
     def _list(
@@ -34,8 +40,10 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
                 TaskFilter.FAILED: 9,
                 TaskFilter.RUNNING: 12,
             }[filter]
-        resp = self._api.offline_list(payload)
-        resp = check_response(resp)
+        resp = self._client.get(
+            ENDPOINT,
+            params={"ac": "task_lists", **payload},
+        ).json()
         tasks = [self._parse_task(t) for t in resp.get("tasks") or []]
         page_size = int(resp.get("page_row", resp.get("page_size", page_size)))
         pagination = Pagination(
@@ -44,18 +52,6 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
             limit=page_size,
         )
         return tasks, pagination
-
-    def add_url(
-        self, url: str, *, dest_dir: str | Directory | None = None
-    ) -> CloudTask:
-        payload: dict = {"url": url}
-        if dest_dir is not None:
-            payload["wp_path_id"] = self._resolve_dir_id(dest_dir)
-        resp = self._api.offline_add_url(payload)
-        resp = check_response(resp)
-        data = resp.get("data", {})
-        info_hash = data.get("info_hash", "")
-        return self._find_task(info_hash)
 
     def add_urls(
         self, *urls: str, dest_dir: str | Directory | None = None
@@ -73,8 +69,13 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
         return [tasks_map[h] for h in hashes if h in tasks_map]
 
     def delete(self, *task_hashes: str) -> None:
-        resp = self._api.offline_remove(list(task_hashes))
-        check_response(resp)
+        if not task_hashes:
+            raise ValueError("no `hash` (info_hash) specified")
+        self._client.post(
+            ENDPOINT,
+            params={"ac": "task_del"},
+            data={f"hash[{i}]": task_hash for i, task_hash in enumerate(task_hashes)},
+        )
 
     def clear(self, filter: TaskFilter | None = None) -> None:
         _flag_map: dict[TaskFilter | None, int] = {
@@ -83,12 +84,18 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
             TaskFilter.FAILED: 2,
             TaskFilter.RUNNING: 3,
         }
-        resp = self._api.offline_clear({"flag": _flag_map[filter]})
-        check_response(resp)
+        self._client.post(
+            ENDPOINT,
+            params={"ac": "task_clear"},
+            data={"flag": _flag_map[filter]},
+        )
 
     def retry(self, info_hash: str) -> None:
-        resp = self._api.offline_restart(info_hash)
-        check_response(resp)
+        self._client.post(
+            ENDPOINT,
+            params={"ac": "restart"},
+            data={"info_hash": info_hash},
+        )
 
     def _find_task(self, info_hash: str) -> CloudTask:
         tasks_map = self._fetch_tasks_map()

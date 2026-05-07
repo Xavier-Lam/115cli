@@ -1,10 +1,10 @@
 import random
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
-from cli115.client.base import CloudTask, Directory, DownloadQuota
-from cli115.client.models import TaskStatus
+from cli115.client.base import CloudTask, DownloadQuota
 from tests.client.conftest import make_client
 
 
@@ -27,35 +27,6 @@ class TestDownloadQuota:
 
 class TestDownloadAddAndDelete:
 
-    def test_add_url(self, api_client, root_dir):
-        hashes = []
-        try:
-            current_total = len(api_client.download.list())
-            task = api_client.download.add_url(_random_image_url())
-            hashes.append(task.info_hash)
-            assert isinstance(task, CloudTask)
-            assert task.info_hash
-            assert task.status in list(TaskStatus)
-            collection = api_client.download.list()
-            assert len(collection) == current_total + 1
-            assert any(t.info_hash == task.info_hash for t in collection)
-
-            # with dest directory
-            task = api_client.download.add_url(
-                _random_image_url(), dest_dir=root_dir.path
-            )
-            hashes.append(task.info_hash)
-            assert isinstance(task, CloudTask)
-            assert task.info_hash
-            if task.folder_id:
-                folder_entry = api_client.file.id(task.folder_id)
-                assert isinstance(folder_entry, Directory)
-                assert task.folder_id == root_dir.id
-        finally:
-            if hashes:
-                time.sleep(0.5)
-                api_client.download.delete(*hashes)
-
     def test_add_urls(self, api_client):
         hashes = []
         try:
@@ -77,11 +48,18 @@ class TestDownloadAddAndDelete:
                 time.sleep(0.5)
                 api_client.download.delete(*hashes)
 
-    def test_add_url_with_nonexistent_dest(self):
+    def test_add_urls_with_nonexistent_dest(self):
         client = make_client()
         # id=0 signals the destination directory does not exist
-        client.download._api.fs_dir_getid.return_value = {"state": True, "id": 0}
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/files/getid"):
+                resp.json.return_value = {"id": 0}
+            return resp
+
+        client.download._client.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
-            client.download.add_url(
+            client.download.add_urls(
                 "http://example.com/file.zip", dest_dir="/nonexistent"
             )

@@ -27,7 +27,14 @@ class TestId:
 
     def test_id_nonexistent(self):
         client = make_client()
-        client.file._api.fs_file.return_value = {"state": True, "data": []}
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/files/get_info"):
+                resp.json.return_value = {"state": True, "data": []}
+            return resp
+
+        client.file._client.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             client.file.id("999999999999999")
 
@@ -56,8 +63,16 @@ class TestStat:
 
     def test_stat_nonexistent(self):
         client = make_client()
-        client.file._api.fs_dir_getid.return_value = {"state": True, "id": "100"}
-        client.file._api.fs_files.return_value = {"state": True, "count": 0, "data": []}
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/files/getid"):
+                resp.json.return_value = {"state": True, "id": "100"}
+            elif url.endswith("/files"):
+                resp.json.return_value = {"state": True, "count": 0, "data": []}
+            return resp
+
+        client.file._client.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             client.file.stat("/parent/nonexistent")
 
@@ -221,7 +236,14 @@ class TestFind:
     def test_find_with_nonexistent_path(self):
         client = make_client()
         # id=0 signals the path does not exist
-        client.file._api.fs_dir_getid.return_value = {"state": True, "id": 0}
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/files/getid"):
+                resp.json.return_value = {"state": True, "id": 0}
+            return resp
+
+        client.file._client.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             len(client.file.find("query", path="/nonexistent"))
 

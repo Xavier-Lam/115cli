@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from cli115.api.web.p115client import P115Client
 from cli115.auth import Auth
-from cli115.client.base import AccountClient, Client, DownloadClient, FileClient
+from cli115.client.base import (
+    AccountClient,
+    Client,
+    DownloadClient,
+    FileClient,
+)
+from cli115.client.webapi.base import DEFAULT_USER_AGENT
 from cli115.client.webapi.account import WebAPIAccountClient
 from cli115.client.webapi.download import WebAPIDownloadClient
-from cli115.client.webapi.file import DEFAULT_USER_AGENT, WebAPIFileClient
-
+from cli115.client.webapi.file import WebAPIFileClient
 
 __all__ = [
     "DEFAULT_USER_AGENT",

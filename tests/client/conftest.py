@@ -17,7 +17,6 @@ from cli115.auth import CookieAuth
 from cli115.client import Client, Directory, File, create_client, webapi
 from cli115.helpers import normalize_path, parse_cookie_string
 
-
 TEST_ROOT = "/115cli_test"
 
 
@@ -26,9 +25,13 @@ def make_client():
     with patch("cli115.client.webapi.P115Client"):
         client = webapi.WebAPIClient(MagicMock())
     mock_api = MagicMock()
+    mock_client = MagicMock()
     client._account._api = mock_api
     client._file._api = mock_api
     client._download._api = mock_api
+    client._account._client = mock_client
+    client._file._client = mock_client
+    client._download._client = mock_client
     return client
 
 

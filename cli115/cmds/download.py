@@ -10,7 +10,6 @@ from cli115.cmds.formatter import format_entry, ListFormatterMixin, PairFormatte
 from cli115.exceptions import CommandLineError
 from cli115.helpers import format_size
 
-
 _STATUS_LABELS = {
     -1: "Failed",
     0: "Waiting",
@@ -87,11 +86,7 @@ class DownloadAddCommand(ListFormatterMixin, BaseCommand):
         client = self._create_client()
         urls = args.urls
         dest_dir = getattr(args, "dest", None)
-        if len(urls) == 1:
-            task = client.download.add_url(urls[0], dest_dir=dest_dir)
-            tasks = [task]
-        else:
-            tasks = client.download.add_urls(*urls, dest_dir=dest_dir)
+        tasks = client.download.add_urls(*urls, dest_dir=dest_dir)
         records = [_task_record(t) for t in tasks]
         self.output(records, args)
 
