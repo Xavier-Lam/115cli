@@ -42,8 +42,8 @@ class TestCreateDirectory:
                 raise FileExistsError("directory already exists")
             return resp
 
-        client.file._client.get.side_effect = mock_request
-        client.file._client.post.side_effect = mock_request
+        client.file._api.get.side_effect = mock_request
+        client.file._api.post.side_effect = mock_request
         with pytest.raises(FileExistsError):
             client.file.create_directory("/parent/existing")
 
@@ -61,8 +61,8 @@ class TestCreateDirectory:
                 raise FileExistsError("directory already exists")
             return resp
 
-        client.file._client.get.side_effect = mock_request
-        client.file._client.post.side_effect = mock_request
+        client.file._api.get.side_effect = mock_request
+        client.file._api.post.side_effect = mock_request
         client.file.stat = MagicMock(return_value=existing)
         result = client.file.create_directory("/parent/existing", parents=True)
         assert result is existing

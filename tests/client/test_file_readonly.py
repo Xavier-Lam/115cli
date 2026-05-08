@@ -34,7 +34,7 @@ class TestId:
                 resp.json.return_value = {"state": True, "data": []}
             return resp
 
-        client.file._client.get.side_effect = mock_get
+        client.file._api.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             client.file.id("999999999999999")
 
@@ -72,7 +72,7 @@ class TestStat:
                 resp.json.return_value = {"state": True, "count": 0, "data": []}
             return resp
 
-        client.file._client.get.side_effect = mock_get
+        client.file._api.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             client.file.stat("/parent/nonexistent")
 
@@ -243,7 +243,7 @@ class TestFind:
                 resp.json.return_value = {"state": True, "id": 0}
             return resp
 
-        client.file._client.get.side_effect = mock_get
+        client.file._api.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             len(client.file.find("query", path="/nonexistent"))
 

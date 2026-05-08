@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from cli115.__version__ import __version__
-from cli115.client.webapi import DEFAULT_USER_AGENT
+from cli115.client.general import DEFAULT_USER_AGENT
 from cli115.credentials import CredentialManager
 from cli115.cmds.account import AccountCommand
 from cli115.cmds.auth import AuthCommand
@@ -29,8 +29,7 @@ from cli115.cmds.rm import RmCommand
 from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
 from cli115.cmds.url import UrlCommand
-from cli115.exceptions import CommandLineError, CredentialError
-
+from cli115.exceptions import APIError, CommandLineError, CredentialError
 
 COMMANDS = OrderedDict(
     [
@@ -140,7 +139,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         cmd.execute(args)
-    except (CommandLineError, CredentialError, OSError) as e:
+    except (APIError, CommandLineError, CredentialError, OSError) as e:
         typ = type(e).__name__
         if isinstance(e, CommandLineError):
             typ = "Error"

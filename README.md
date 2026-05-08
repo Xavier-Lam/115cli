@@ -137,6 +137,9 @@ The project aims to cover the core features of 115 cloud storage. Planned additi
 
 - **QRCode login** - Implementing QR code-based authentication for easier login without needing to manually extract cookies.
 
+## Credits
+* Some non-web API implementations are learned from [**p115client**](https://github.com/ChenyangGao/p115client), which provides some non-web API implementations.
+
 ## Disclaimer
 
 This is an **unofficial** client for *115.com* and is not affiliated with, endorsed by, or associated with *115.com* or its parent company in any way.

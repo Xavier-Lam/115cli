@@ -27,7 +27,7 @@ setup(
     packages=find_packages(include=["cli115*"]),
     python_requires=">=3.12",
     install_requires=[
-        "p115client>=0.0.8",
+        "p115cipher==0.0.4",
         "blinker",
         "httpx",
         "pathspec",

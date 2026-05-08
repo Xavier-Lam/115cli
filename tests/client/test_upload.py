@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cli115.client import File, UploadStatus, webapi
+from cli115.client import File, general, UploadStatus
 from cli115.exceptions import InstantUploadNotAvailableError
 from tests.client.conftest import upload_file
 
@@ -43,9 +43,9 @@ class TestInstantUpload:
 
     @pytest.fixture
     def mock_client(self):
-        """WebAPIClient with fully mocked API - makes no actual network requests."""
-        with patch("cli115.client.webapi.P115Client"):
-            client = webapi.WebAPIClient(MagicMock())
+        """General client with fully mocked API - makes no actual network requests."""
+        with patch("cli115.client.general.base.APIClient"):
+            client = general.Client(MagicMock())
         # stat raises FileNotFoundError so _upload proceeds past the duplicate check
         client.file.stat = MagicMock(side_effect=FileNotFoundError("path not found"))
         # parent directory always resolves to a fake dir ID

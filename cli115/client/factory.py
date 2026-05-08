@@ -1,11 +1,13 @@
 """Factory for creating high-level clients."""
 
+from httpx import BaseTransport
+
 from cli115.auth import Auth
 from cli115.client.base import Client
-from cli115.client.webapi import WebAPIClient
+from cli115.client import general
 
 
-def create_client(auth: Auth) -> Client:
+def create_client(auth: Auth, transport: BaseTransport | None = None) -> Client:
     """Create a high-level Client from an Auth provider.
 
     The auth object is retained by the client so it can
@@ -17,4 +19,4 @@ def create_client(auth: Auth) -> Client:
     Returns:
         A Client instance.
     """
-    return WebAPIClient(auth)
+    return general.Client(auth, transport=transport)

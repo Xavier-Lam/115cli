@@ -33,20 +33,30 @@ MIN_INSTANT_UPLOAD_SIZE = 2 * 1024 * 1024  # Minimum file size for instant uploa
 class Client(ABC):
     """Abstract high-level client interface."""
 
+    def __init__(
+        self,
+        account: AccountClient,
+        file: FileClient,
+        download: DownloadClient,
+    ):
+        self._account = account
+        self._file = file
+        self._download = download
+
     @property
-    @abstractmethod
     def account(self) -> AccountClient:
         """Access account operations."""
+        return self._account
 
     @property
-    @abstractmethod
     def file(self) -> FileClient:
         """Access file operations."""
+        return self._file
 
     @property
-    @abstractmethod
     def download(self) -> DownloadClient:
         """Access cloud download (offline) operations."""
+        return self._download
 
 
 class AccountClient(ABC):

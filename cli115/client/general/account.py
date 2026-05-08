@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from cli115.api import endpoint
-from cli115.client.base import AccountClient
+from cli115.client.base import AccountClient as BaseAccountClient
 from cli115.client.models import AccountInfo, Usage
-from cli115.client.webapi.base import BaseClient
+from .base import BaseClient, Endpoint
 
 
-class WebAPIAccountClient(AccountClient, BaseClient):
+class AccountClient(BaseAccountClient, BaseClient):
 
     def info(self) -> AccountInfo:
-        resp = self._client.get(
-            endpoint.MY,
+        resp = self._api.get(
+            Endpoint.MY,
             params={"ct": "ajax", "ac": "nav"},
         )
         data = resp.json()["data"]
@@ -26,8 +25,8 @@ class WebAPIAccountClient(AccountClient, BaseClient):
         )
 
     def usage(self) -> Usage:
-        resp = self._client.get(
-            endpoint.WEBAPI + "/files/index_info",
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/index_info",
             params={"count_space_nums": 0},
         )
         space = resp.json()["data"]["space_info"]

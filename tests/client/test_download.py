@@ -58,7 +58,7 @@ class TestDownloadAddAndDelete:
                 resp.json.return_value = {"id": 0}
             return resp
 
-        client.download._client.get.side_effect = mock_get
+        client.download._api.get.side_effect = mock_get
         with pytest.raises(FileNotFoundError):
             client.download.add_urls(
                 "http://example.com/file.zip", dest_dir="/nonexistent"

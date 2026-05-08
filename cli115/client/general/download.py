@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from cli115.api import endpoint
-from cli115.client.base import DownloadClient
+from cli115.client.base import DownloadClient as BaseDownloadClient
 from cli115.client.models import (
     CloudTask,
     Directory,
@@ -10,17 +9,15 @@ from cli115.client.models import (
     TaskFilter,
     TaskStatus,
 )
-from cli115.client.webapi.base import APP_USER_AGENT, APP_VERSION, BaseClient
 from cli115.client.utils import parse_ts
+from .base import APP_USER_AGENT, APP_VERSION, BaseClient, Endpoint
 
-ENDPOINT = endpoint.LIXIAN + "/web/lixian/"
 
-
-class WebAPIDownloadClient(DownloadClient, BaseClient):
+class DownloadClient(BaseDownloadClient, BaseClient):
 
     def quota(self) -> DownloadQuota:
-        resp = self._client.get(
-            ENDPOINT,
+        resp = self._api.get(
+            Endpoint.LIXIAN + "/web/lixian/",
             params={"ac": "get_quota_info"},
         )
         data = resp.json()
@@ -39,8 +36,8 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
                 TaskFilter.FAILED: 9,
                 TaskFilter.RUNNING: 12,
             }[filter]
-        resp = self._client.get(
-            ENDPOINT,
+        resp = self._api.get(
+            Endpoint.LIXIAN + "/web/lixian/",
             params={"ac": "task_lists", **payload},
         ).json()
         tasks = [self._parse_task(t) for t in resp.get("tasks") or []]
@@ -63,8 +60,8 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
         if dest_dir is not None:
             payload["wp_path_id"] = self._resolve_dir_id(dest_dir)
 
-        resp = self._client.post_encrypted(
-            endpoint.LIXIAN + "/lixianssp/",
+        resp = self._api.post_encrypted(
+            Endpoint.LIXIAN + "/lixianssp/",
             data=payload,
             headers={"User-Agent": APP_USER_AGENT},
         )
@@ -77,8 +74,8 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
     def delete(self, *task_hashes: str) -> None:
         if not task_hashes:
             raise ValueError("no `hash` (info_hash) specified")
-        self._client.post(
-            ENDPOINT,
+        self._api.post(
+            Endpoint.LIXIAN + "/web/lixian/",
             params={"ac": "task_del"},
             data={f"hash[{i}]": task_hash for i, task_hash in enumerate(task_hashes)},
         )
@@ -90,30 +87,17 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
             TaskFilter.FAILED: 2,
             TaskFilter.RUNNING: 3,
         }
-        self._client.post(
-            ENDPOINT,
+        self._api.post(
+            Endpoint.LIXIAN + "/web/lixian/",
             params={"ac": "task_clear"},
             data={"flag": _flag_map[filter]},
         )
 
     def retry(self, info_hash: str) -> None:
-        self._client.post(
-            ENDPOINT,
+        self._api.post(
+            Endpoint.LIXIAN + "/web/lixian/",
             params={"ac": "restart"},
             data={"info_hash": info_hash},
-        )
-
-    def _find_task(self, info_hash: str) -> CloudTask:
-        tasks_map = self._fetch_tasks_map()
-        if info_hash in tasks_map:
-            return tasks_map[info_hash]
-        return CloudTask(
-            info_hash=info_hash,
-            name="",
-            size=0,
-            status=TaskStatus.WAITING,
-            percent_done=0,
-            url="",
         )
 
     def _fetch_tasks_map(self) -> dict[str, CloudTask]:

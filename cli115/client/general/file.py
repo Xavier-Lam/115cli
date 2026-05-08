@@ -5,13 +5,12 @@ import json
 import os
 from typing import BinaryIO
 
+import httpx
 from p115cipher import ecdh_aes_decrypt, make_upload_payload
 
-from cli115.api import endpoint
-from cli115.api.web.p115client import check_response
 from cli115.client.base import (
-    FileClient,
     DEFAULT_PAGE_SIZE,
+    FileClient as BaseFileClient,
     MAX_PAGE_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
     RemoteFile,
@@ -28,23 +27,24 @@ from cli115.client.models import (
     UploadStatus,
 )
 from cli115.client.utils import parse_item, parse_ts
-from cli115.client.webapi.base import (
+from cli115.exceptions import InstantUploadNotAvailableError
+from cli115.helpers import normalize_path, sha1_file, join_path
+from .base import (
     APP_USER_AGENT,
     APP_VERSION,
     BaseClient,
     DEFAULT_USER_AGENT,
+    Endpoint,
 )
-from cli115.exceptions import InstantUploadNotAvailableError
-from cli115.helpers import normalize_path, sha1_file, join_path
 
 
-class WebAPIFileClient(FileClient, BaseClient):
+class FileClient(BaseFileClient, BaseClient):
 
     # -- public API --
 
     def id(self, file_id: str) -> Directory | File:
-        resp = self._client.get(
-            endpoint.WEBAPI + "/files/get_info",
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/get_info",
             params={"file_id": file_id},
         )
         data = resp.json()["data"]
@@ -73,8 +73,8 @@ class WebAPIFileClient(FileClient, BaseClient):
             dir_id = self._resolve_dir_id(path)
         # both /files/order and /files need to be called to get correct
         # sorting results, otherwise the sorting parameters are ignored
-        self._client.post(
-            endpoint.WEBAPI + "/files/order",
+        self._api.post(
+            Endpoint.WEBAPI + "/files/order",
             data={
                 "file_id": dir_id,
                 "user_order": sort.value,
@@ -84,8 +84,8 @@ class WebAPIFileClient(FileClient, BaseClient):
                 "fc_mix": 1,
             },
         )
-        resp = self._client.get(
-            endpoint.WEBAPI + "/files",
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files",
             params={
                 "aid": 1,  # normal files
                 "cid": dir_id,
@@ -132,8 +132,8 @@ class WebAPIFileClient(FileClient, BaseClient):
         if path is not None:
             payload["cid"] = self._resolve_dir_id(path)
 
-        resp = self._client.get(
-            endpoint.WEBAPI + "/files/search",
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/search",
             params=payload,
         ).json()
 
@@ -163,8 +163,8 @@ class WebAPIFileClient(FileClient, BaseClient):
             pid = parent_dir.id
 
         try:
-            resp = self._client.post(
-                endpoint.WEBAPI + "/files/add",
+            resp = self._api.post(
+                Endpoint.WEBAPI + "/files/add",
                 data={"cname": name, "pid": pid},
             ).json()
         except FileExistsError:
@@ -188,8 +188,8 @@ class WebAPIFileClient(FileClient, BaseClient):
             items = self.list(path)
             if len(items) > 0:
                 raise FileExistsError(f"directory is not empty: {path}")
-        self._client.post(
-            endpoint.WEBAPI + "/rb/delete",
+        self._api.post(
+            Endpoint.WEBAPI + "/rb/delete",
             data={"fid": entry.id},
         )
 
@@ -199,15 +199,15 @@ class WebAPIFileClient(FileClient, BaseClient):
         if recursive:
             raise NotImplementedError("recursive batch delete is not yet supported")
         ids = [self._resolve_id(p) for p in paths]
-        self._client.post(
-            endpoint.WEBAPI + "/rb/delete",
+        self._api.post(
+            Endpoint.WEBAPI + "/rb/delete",
             data={f"fid[{i}]": id_ for i, id_ in enumerate(ids)},
         )
 
     def rename(self, path: str | FileSystemEntry, name: str) -> None:
         file_id = self._resolve_id(path)
-        self._client.post(
-            endpoint.WEBAPI + "/files/batch_rename",
+        self._api.post(
+            Endpoint.WEBAPI + "/files/batch_rename",
             data={f"files_new_name[{file_id}]": name},
         )
 
@@ -219,8 +219,8 @@ class WebAPIFileClient(FileClient, BaseClient):
     ) -> None:
         src_ids = [self._resolve_id(s) for s in srcs]
         dest_id = self._resolve_dir_id(dest_dir)
-        self._client.post(
-            endpoint.WEBAPI + "/files/move",
+        self._api.post(
+            Endpoint.WEBAPI + "/files/move",
             data={f"fid[{i}]": id_ for i, id_ in enumerate(src_ids)} | {"pid": dest_id},
         )
 
@@ -232,8 +232,8 @@ class WebAPIFileClient(FileClient, BaseClient):
     ) -> None:
         src_ids = [self._resolve_id(s) for s in srcs]
         dest_id = self._resolve_dir_id(dest_dir)
-        self._client.post(
-            endpoint.WEBAPI + "/files/copy",
+        self._api.post(
+            Endpoint.WEBAPI + "/files/copy",
             data={f"fid[{i}]": id_ for i, id_ in enumerate(src_ids)} | {"pid": dest_id},
         )
 
@@ -292,8 +292,7 @@ class WebAPIFileClient(FileClient, BaseClient):
         status.is_instant_uploaded = False
         with status.start_upload(file_size) as progress, progress.patch_file(file):
             resp = self._upload_file_sample(file, pid=dir_id, filename=filename)
-        resp = check_response(resp)
-        data = resp.get("data", {})
+        data = resp["data"]
 
         status.set_message("upload completed")
 
@@ -328,7 +327,7 @@ class WebAPIFileClient(FileClient, BaseClient):
             file.seek(start)
             return file.read(end - start + 1)
 
-        upload_info = self._client.get(endpoint.PROAPI + "/app/uploadinfo").json()
+        upload_info = self._api.get(Endpoint.PROAPI + "/app/uploadinfo").json()
 
         payload = {
             "filename": filename,
@@ -360,8 +359,8 @@ class WebAPIFileClient(FileClient, BaseClient):
             )
 
     def _post_upload_init(self, payload: dict) -> dict:
-        resp = self._client.post(
-            endpoint.UPLB + "/4.0/initupload.php",
+        resp = self._api.post(
+            Endpoint.UPLB + "/4.0/initupload.php",
             headers={
                 "Content-Type": "application/x-www-form-urlencoded",
                 "User-Agent": APP_USER_AGENT,
@@ -371,11 +370,11 @@ class WebAPIFileClient(FileClient, BaseClient):
         return json.loads(ecdh_aes_decrypt(resp.content, decompress=True))
 
     def _upload_file_sample(self, file: BinaryIO, *, pid: str, filename: str) -> dict:
-        sample_info = self._client.post(
-            endpoint.UPLB + "/3.0/sampleinitupload.php",
+        sample_info = self._api.post(
+            Endpoint.UPLB + "/3.0/sampleinitupload.php",
             data={"filename": filename, "target": f"U_1_{pid}"},
         ).json()
-        resp = self._client.post(
+        resp = httpx.post(
             sample_info["host"],
             data={
                 "name": filename,
@@ -398,9 +397,9 @@ class WebAPIFileClient(FileClient, BaseClient):
         if entry.is_directory:
             raise IsADirectoryError("cannot get download info for a directory")
 
-        ua = user_agent or self._client.headers.get("User-Agent", DEFAULT_USER_AGENT)
-        resp = self._client.post_encrypted(
-            endpoint.PROAPI + "/app/chrome/downurl",
+        ua = user_agent or self._api.headers.get("User-Agent", DEFAULT_USER_AGENT)
+        resp = self._api.post_encrypted(
+            Endpoint.PROAPI + "/app/chrome/downurl",
             data={"pickcode": entry.pickcode},
             headers={"User-Agent": ua},
         )

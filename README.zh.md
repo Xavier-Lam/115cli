@@ -135,6 +135,9 @@ tasks = client.download.list()
 
 - **二维码登录** - 实现基于二维码的认证, 方便登录而无需手动提取 cookie.
 
+## 致谢
+* [**p115client**](https://github.com/ChenyangGao/p115client) 提供了一些非web端API实现, 本项目的非web端接口来源于该项目.
+
 ## 免责声明
 
 这是一个非官方的工具, 与 *115.com* 或其母公司无任何关联. 使用风险自负, 作者不对账号被封, 数据丢失等后果负责.

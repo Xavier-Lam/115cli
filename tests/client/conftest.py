@@ -1,37 +1,30 @@
+from functools import cached_property
 import hashlib
 import logging
 import os
 import tempfile
 import time
-import unittest.mock
 import uuid
-from functools import cached_property
 from unittest.mock import MagicMock, patch
 
-import httpcore
-import httpcore_request
+from httpx import HTTPTransport, Request, RequestNotRead, Response
 import pytest
 
-from cli115.api.web import p115client
 from cli115.auth import CookieAuth
-from cli115.client import Client, Directory, File, create_client, webapi
+from cli115.client import Client, create_client, Directory, File, general
 from cli115.helpers import normalize_path, parse_cookie_string
 
 TEST_ROOT = "/115cli_test"
 
 
 def make_client():
-    """Create a WebAPIClient with a fully mocked P115 API backend."""
-    with patch("cli115.client.webapi.P115Client"):
-        client = webapi.WebAPIClient(MagicMock())
-    mock_api = MagicMock()
+    """Create a General client with a fully mocked P115 API backend."""
+    with patch("cli115.client.general.base.APIClient"):
+        client = general.Client(MagicMock())
     mock_client = MagicMock()
-    client._account._api = mock_api
-    client._file._api = mock_api
-    client._download._api = mock_api
-    client._account._client = mock_client
-    client._file._client = mock_client
-    client._download._client = mock_client
+    client._account._api = mock_client
+    client._file._api = mock_client
+    client._download._api = mock_client
     return client
 
 
@@ -84,12 +77,11 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     records = _log_capture.records
     if not records:
         return
-    records115 = [r for r in records if ".115.com" in r.splitlines()[0]]
     terminalreporter.write_sep(
         "=",
-        f"API requests: {len(records)} total, {len(records115)} to 115.com",
+        f"API requests: {len(records)} total",
     )
-    for msg in records115:
+    for msg in records:
         for line in msg.splitlines():
             terminalreporter.write_line(f"  {line}")
 
@@ -245,32 +237,43 @@ def api_client():
     if not all([uid, cid, seid, kid]):
         pytest.skip("TEST_COOKIE_115CLI must contain UID, CID, SEID, KID")
 
-    # set up proxy for tests
-    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
-    if proxy_url:
-        proxy_pool = httpcore.HTTPProxy(proxy_url, http2=True)
-        httpcore_request._DEFAULT_CLIENT = proxy_pool
+    class DebugTransport(HTTPTransport):
+        @cached_property
+        def logger(self):
+            return logging.getLogger("cli115.test_api_client")
+
+        def handle_request(self, request: Request) -> Response:
+            # log the request details before sending
+            message = (
+                f"Requesting {request.method} "
+                f"{request.url.scheme}://{request.url.host}{request.url.path}"
+            )
+            params = request.url.params
+            if params:
+                message += f"\n    └─ Params: {params}"
+            try:
+                data = request.content
+            except RequestNotRead:
+                data = b"<streaming request body>"
+            if data:
+                message += f"\n    └─ Payload: {data}"
+            self.logger.debug(message)
+
+            time.sleep(0.05)  # avoid hitting server rate limits during tests
+
+            return super().handle_request(request)
+
+    transport = DebugTransport()
+    transport.logger.addHandler(_log_capture)
+    transport.logger.setLevel(logging.DEBUG)
 
     auth = CookieAuth(uid=uid, cid=cid, seid=seid, kid=kid)
-    client = create_client(auth)
+    client = create_client(auth, transport=transport)
     _patch_client_registry(client)
-
-    p115client.logger.addHandler(_log_capture)
-    p115client.logger.setLevel(logging.DEBUG)
-
-    _orig_request = httpcore_request.request
-
-    def _rate_limited_request(*args, **kwargs):
-        time.sleep(0.05)  # avoid hitting server rate limits during tests
-        return _orig_request(*args, **kwargs)
-
-    patcher = unittest.mock.patch("httpcore_request.request", _rate_limited_request)
-    patcher.start()
-
-    yield client
-
-    patcher.stop()
-    p115client.logger.removeHandler(_log_capture)
+    try:
+        yield client
+    finally:
+        transport.logger.removeHandler(_log_capture)
 
 
 @pytest.fixture(scope="session")
