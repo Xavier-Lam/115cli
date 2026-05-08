@@ -5,6 +5,7 @@ from cli115.helpers import (
     join_path,
     normalize_path,
     parse_cookie_string,
+    parse_share_url,
     parse_size,
 )
 
@@ -63,6 +64,27 @@ class TestParseCookieString:
         result = parse_cookie_string(cookie)
         assert len(result) == 5
         assert result["OTHER"] == "x"
+
+
+class TestParseShareUrl:
+    def test_code_only(self):
+        assert parse_share_url("swzadyu3zs9") == ("swzadyu3zs9", "")
+
+    def test_without_password(self):
+        assert parse_share_url("https://115cdn.com/s/swzadyu3zs9") == (
+            "swzadyu3zs9",
+            "",
+        )
+
+    def test_with_query_password(self):
+        assert parse_share_url("https://115cdn.com/s/swzadyu3zs9?password=azhy") == (
+            "swzadyu3zs9",
+            "azhy",
+        )
+
+    def test_invalid_raises(self):
+        with pytest.raises(ValueError):
+            parse_share_url("")
 
 
 class TestFormatSize:

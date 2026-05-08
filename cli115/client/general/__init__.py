@@ -8,6 +8,7 @@ from .base import APIClient, DEFAULT_USER_AGENT
 from .account import AccountClient
 from .download import DownloadClient
 from .file import FileClient
+from .share import ShareClient
 
 __all__ = [
     "Client",
@@ -36,4 +37,5 @@ class Client(BaseClient):
             account=AccountClient(api),
             file=FileClient(api),
             download=DownloadClient(api),
+            share=ShareClient(api),
         )

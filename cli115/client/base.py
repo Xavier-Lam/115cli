@@ -17,6 +17,7 @@ from cli115.client.models import (
     File,
     FileSystemEntry,
     Pagination,
+    ShareInfo,
     SortField,
     SortOrder,
     TaskFilter,
@@ -38,10 +39,12 @@ class Client(ABC):
         account: AccountClient,
         file: FileClient,
         download: DownloadClient,
+        share: ShareClient,
     ):
         self._account = account
         self._file = file
         self._download = download
+        self._share = share
 
     @property
     def account(self) -> AccountClient:
@@ -57,6 +60,11 @@ class Client(ABC):
     def download(self) -> DownloadClient:
         """Access cloud download (offline) operations."""
         return self._download
+
+    @property
+    def share(self) -> ShareClient:
+        """Access share-link operations."""
+        return self._share
 
 
 class AccountClient(ABC):
@@ -158,6 +166,22 @@ class DownloadClient(ABC):
 
         Args:
             info_hash: info_hash of the task to retry.
+        """
+
+
+class ShareClient(ABC):
+    """Abstract interface for public share operations."""
+
+    @abstractmethod
+    def info(self, share_code: str, password: str | None = None) -> ShareInfo:
+        """Get basic metadata for a share.
+
+        Args:
+            share_code: Share code.
+            password: Optional receive code.
+
+        Returns:
+            A :class:`ShareInfo` describing the share.
         """
 
 
@@ -356,7 +380,8 @@ class FileClient(ABC):
 
         Raises:
             FileNotFoundError: If the path does not exist.
-            FileExistsError: If ``recursive`` is ``False`` and the directory is not empty.
+            FileExistsError: If ``recursive`` is ``False`` and the directory
+                is not empty.
         """
 
     @abstractmethod

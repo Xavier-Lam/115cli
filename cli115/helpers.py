@@ -4,6 +4,7 @@ import hashlib
 from http.cookies import SimpleCookie
 import re
 from typing import BinaryIO
+from urllib.parse import parse_qsl, urlsplit
 
 
 def normalize_path(path: str) -> str:
@@ -37,6 +38,26 @@ def parse_cookie_string(cookie_str: str) -> dict[str, str]:
     sc = SimpleCookie()
     sc.load(cookie_str)
     return {key: morsel.value for key, morsel in sc.items()}
+
+
+def parse_share_url(url: str) -> tuple[str, str]:
+    """Extract share_code and optional password from a share URL."""
+    value = url.strip()
+    if not value:
+        raise ValueError("share url is empty")
+
+    parsed = urlsplit(value)
+    share_code = parsed.path.rstrip("/").split("/")[-1].strip()
+    if not share_code:
+        raise ValueError(f"can't extract share_code from {url!r}")
+
+    password = ""
+    for key, val in parse_qsl(parsed.query):
+        if key == "password":
+            password = val
+            break
+
+    return share_code, password
 
 
 _SIZE_UNITS: dict[str, int] = {
