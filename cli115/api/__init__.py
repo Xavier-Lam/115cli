@@ -1,4 +1,7 @@
-from httpx import Client as _Client, Request
+import json
+
+from httpx import Client as _Client, Request, Response
+from p115cipher import rsa_decrypt, rsa_encrypt
 
 from cli115.api.web.p115client import check_response, logger
 from cli115.exceptions import WAFBlockedError
@@ -9,6 +12,21 @@ __all__ = [
 
 
 class Client(_Client):
+    def post_encrypted(
+        self,
+        url: str,
+        **kwargs,
+    ) -> Response:
+        data = kwargs.pop("data")
+        encrypted_payload = rsa_encrypt(
+            json.dumps(data, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii")
+        kwargs["data"] = {"data": encrypted_payload}
+        resp = self.post(url, **kwargs)
+        raw_json = rsa_decrypt(resp.json()["data"])
+        resp._content = raw_json
+        return resp
+
     def send(self, request: Request, *args, **kwargs):
         message = f"Requesting {request.method} {request.url.scheme}://{request.url.host}{request.url.path}"
         params = request.url.params

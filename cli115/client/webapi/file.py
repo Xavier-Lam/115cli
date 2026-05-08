@@ -345,17 +345,12 @@ class WebAPIFileClient(FileClient, BaseClient):
             raise IsADirectoryError("cannot get download info for a directory")
 
         ua = user_agent or self._client.headers.get("User-Agent", DEFAULT_USER_AGENT)
-        encrypted_payload = rsa_encrypt(
-            json.dumps({"pickcode": entry.pickcode}, separators=(",", ":")).encode(
-                "utf-8"
-            )
-        ).decode("ascii")
-        resp = self._client.post(
+        resp = self._client.post_encrypted(
             endpoint.PROAPI + "/app/chrome/downurl",
-            data={"data": encrypted_payload},
-            headers={"user-agent": ua},
+            data={"pickcode": entry.pickcode},
+            headers={"User-Agent": ua},
         )
-        raw_data = json.loads(rsa_decrypt(resp.json()["data"]))
+        raw_data = resp.json()
         download_url = ""
         for item in raw_data.values():
             if isinstance(item, dict) and item["pick_code"] == entry.pickcode:

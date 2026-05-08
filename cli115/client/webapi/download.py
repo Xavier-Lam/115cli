@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from cli115.api import endpoint
-from cli115.api.web.p115client import check_response
 from cli115.client.base import DownloadClient
 from cli115.client.models import (
     CloudTask,
@@ -11,7 +10,7 @@ from cli115.client.models import (
     TaskFilter,
     TaskStatus,
 )
-from cli115.client.webapi.base import BaseClient
+from cli115.client.webapi.base import APP_USER_AGENT, APP_VERSION, BaseClient
 from cli115.client.utils import parse_ts
 
 ENDPOINT = endpoint.LIXIAN + "/web/lixian/"
@@ -56,14 +55,21 @@ class WebAPIDownloadClient(DownloadClient, BaseClient):
     def add_urls(
         self, *urls: str, dest_dir: str | Directory | None = None
     ) -> list[CloudTask]:
+        if not urls:
+            raise ValueError("no URLs specified")
+        payload = {f"url[{i}]": url for i, url in enumerate(urls)}
+        payload["ac"] = "add_task_urls"
+        payload["app_ver"] = APP_VERSION
         if dest_dir is not None:
-            wp_path_id = self._resolve_dir_id(dest_dir)
-            resp = self._api.offline_add_urls(list(urls), {"wp_path_id": wp_path_id})
-        else:
-            resp = self._api.offline_add_urls(list(urls))
-        resp = check_response(resp)
-        data = resp.get("data", {})
-        result = data.get("result", [])
+            payload["wp_path_id"] = self._resolve_dir_id(dest_dir)
+
+        resp = self._client.post_encrypted(
+            endpoint.LIXIAN + "/lixianssp/",
+            data=payload,
+            headers={"User-Agent": APP_USER_AGENT},
+        )
+        data = resp.json()
+        result = data["result"]
         hashes = [r.get("info_hash", "") for r in result]
         tasks_map = self._fetch_tasks_map()
         return [tasks_map[h] for h in hashes if h in tasks_map]
