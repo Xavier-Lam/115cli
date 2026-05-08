@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from typing import BinaryIO
 
-from p115cipher import rsa_decrypt, rsa_encrypt
+from p115cipher import ecdh_aes_decrypt, make_upload_payload
 
 from cli115.api import endpoint
 from cli115.api.web.p115client import check_response
@@ -27,7 +28,12 @@ from cli115.client.models import (
     UploadStatus,
 )
 from cli115.client.utils import parse_item, parse_ts
-from cli115.client.webapi.base import BaseClient, DEFAULT_USER_AGENT
+from cli115.client.webapi.base import (
+    APP_USER_AGENT,
+    APP_VERSION,
+    BaseClient,
+    DEFAULT_USER_AGENT,
+)
 from cli115.exceptions import InstantUploadNotAvailableError
 from cli115.helpers import normalize_path, sha1_file, join_path
 
@@ -265,21 +271,15 @@ class WebAPIFileClient(FileClient, BaseClient):
             status.set_message("attempting instant upload")
             force_instant = instant_only is not None and file_size >= instant_only
             try:
-                success = self._try_instant_upload(
+                self._try_instant_upload(
                     file=file,
                     filename=filename,
                     file_size=file_size,
                     sha1=sha1,
                     dir_id=dir_id,
-                    path=path,
                 )
-                if success:
-                    status.is_instant_uploaded = True
-                    return self.stat(path)
-                else:
-                    raise InstantUploadNotAvailableError(
-                        "instant upload is not available (file not found on server)"
-                    )
+                status.is_instant_uploaded = True
+                return self.stat(path)
             except Exception as exc:
                 status.instant_upload_error = exc
                 if force_instant:
@@ -291,7 +291,7 @@ class WebAPIFileClient(FileClient, BaseClient):
 
         status.is_instant_uploaded = False
         with status.start_upload(file_size) as progress, progress.patch_file(file):
-            resp = self._api.upload_file_sample(file, pid=dir_id, filename=filename)
+            resp = self._upload_file_sample(file, pid=dir_id, filename=filename)
         resp = check_response(resp)
         data = resp.get("data", {})
 
@@ -318,8 +318,7 @@ class WebAPIFileClient(FileClient, BaseClient):
         file_size: int,
         sha1: str,
         dir_id: str,
-        path: str,
-    ) -> bool:
+    ) -> None:
         """Attempt instant upload.  Return `True` on success, `False` if the
         server does not have this file and a regular upload is required."""
 
@@ -329,15 +328,70 @@ class WebAPIFileClient(FileClient, BaseClient):
             file.seek(start)
             return file.read(end - start + 1)
 
-        resp = self._api.upload_file_init(
-            filename=filename,
-            filesize=file_size,
-            filesha1=sha1,
-            read_range_bytes_or_hash=(read_range if file_size >= 1024 * 1024 else None),
-            pid=dir_id,
-        )
+        upload_info = self._client.get(endpoint.PROAPI + "/app/uploadinfo").json()
 
-        return bool(resp.get("reuse"))
+        payload = {
+            "filename": filename,
+            "fileid": sha1.upper(),
+            "filesize": file_size,
+            "target": f"U_1_{dir_id}",
+            "appid": 0,
+            "sign_key": "",
+            "sign_val": "",
+            "topupload": "true",
+            "appversion": APP_VERSION,
+            "userid": upload_info["user_id"],
+            "userkey": upload_info["userkey"],
+        }
+        resp = self._post_upload_init(payload)
+        status = int(resp["status"])
+        if status == 7:
+            sign_check = str(resp.get("sign_check", ""))
+            payload["sign_key"] = str(resp.get("sign_key", ""))
+            payload["sign_val"] = (
+                hashlib.sha1(read_range(sign_check)).hexdigest().upper()
+            )
+            resp = self._post_upload_init(payload)
+            status = int(resp["status"])
+
+        if status != 2:
+            raise InstantUploadNotAvailableError(
+                "instant upload is not available (file not found on server)"
+            )
+
+    def _post_upload_init(self, payload: dict) -> dict:
+        resp = self._client.post(
+            endpoint.UPLB + "/4.0/initupload.php",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": APP_USER_AGENT,
+            },
+            **make_upload_payload(payload.copy()),
+        )
+        return json.loads(ecdh_aes_decrypt(resp.content, decompress=True))
+
+    def _upload_file_sample(self, file: BinaryIO, *, pid: str, filename: str) -> dict:
+        sample_info = self._client.post(
+            endpoint.UPLB + "/3.0/sampleinitupload.php",
+            data={"filename": filename, "target": f"U_1_{pid}"},
+        ).json()
+        resp = self._client.post(
+            sample_info["host"],
+            data={
+                "name": filename,
+                "key": sample_info["object"],
+                "policy": sample_info["policy"],
+                "OSSAccessKeyId": sample_info["accessid"],
+                "success_action_status": "200",
+                "callback": sample_info["callback"],
+                "signature": sample_info["signature"],
+            },
+            files={"file": (filename, file)},
+            timeout=None,
+        )
+        data = resp.json()
+        data["oss_info"] = sample_info
+        return data
 
     def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)

@@ -1,6 +1,6 @@
 import json
 
-from httpx import Client as _Client, Request, Response
+from httpx import Client as _Client, Request, RequestNotRead, Response
 from p115cipher import rsa_decrypt, rsa_encrypt
 
 from cli115.api.web.p115client import check_response, logger
@@ -28,11 +28,17 @@ class Client(_Client):
         return resp
 
     def send(self, request: Request, *args, **kwargs):
-        message = f"Requesting {request.method} {request.url.scheme}://{request.url.host}{request.url.path}"
+        message = (
+            f"Requesting {request.method} "
+            f"{request.url.scheme}://{request.url.host}{request.url.path}"
+        )
         params = request.url.params
         if params:
             message += f"\n    └─ Params: {params}"
-        data = request.content
+        try:
+            data = request.content
+        except RequestNotRead:
+            data = b"<streaming request body>"
         if data:
             message += f"\n    └─ Payload: {data}"
         logger.debug(message)
