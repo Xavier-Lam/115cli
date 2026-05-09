@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from fnmatch import fnmatch
 
 from cli115.client import File, FileSystemEntry
 from cli115.cmds.base import BaseCommand, MultiCommand, PaginationCommand
@@ -29,9 +30,7 @@ def _share_record(entry: FileSystemEntry) -> list[tuple[str, object]]:
     ]
 
 
-class ShareInfoCommand(PairFormatterMixin, BaseCommand):
-    """Get basic metadata of a share link."""
-
+class BaseShareCommand(BaseCommand):
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
         parser.add_argument("url", help="Share URL or share code")
@@ -42,9 +41,17 @@ class ShareInfoCommand(PairFormatterMixin, BaseCommand):
             help="Share password (receive code)",
         )
 
-    def execute(self, args: argparse.Namespace) -> None:
+    def resolve_share(self, args: argparse.Namespace) -> tuple[str, str | None]:
         share_code, parsed_password = parse_share_url(args.url)
-        password = args.password or parsed_password
+        password = args.password or parsed_password or None
+        return share_code, password
+
+
+class ShareInfoCommand(PairFormatterMixin, BaseShareCommand):
+    """Get basic metadata of a share link."""
+
+    def execute(self, args: argparse.Namespace) -> None:
+        share_code, password = self.resolve_share(args)
         client = self._create_client()
         info = client.share.info(share_code, password=password)
         self.output(
@@ -67,28 +74,20 @@ class ShareInfoCommand(PairFormatterMixin, BaseCommand):
         )
 
 
-class ShareListCommand(ListFormatterMixin, PaginationCommand):
+class ShareListCommand(ListFormatterMixin, PaginationCommand, BaseShareCommand):
     """List entries in a shared link."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
-        parser.add_argument("url", help="Share URL or share code")
         parser.add_argument(
             "path",
             nargs="?",
             default="/",
             help="Directory path inside the shared link (default: /)",
         )
-        parser.add_argument(
-            "-p",
-            "--password",
-            default=None,
-            help="Share password (receive code)",
-        )
 
     def execute(self, args: argparse.Namespace) -> None:
-        share_code, parsed_password = parse_share_url(args.url)
-        password = args.password or parsed_password
+        share_code, password = self.resolve_share(args)
 
         client = self._create_client()
         collection = client.share.list(
@@ -102,27 +101,90 @@ class ShareListCommand(ListFormatterMixin, PaginationCommand):
         self.output(records, args)
 
 
-class ShareStatCommand(PairFormatterMixin, BaseCommand):
+class ShareStatCommand(PairFormatterMixin, BaseShareCommand):
     """Show metadata for a single shared file or directory."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
-        parser.add_argument("url", help="Share URL or share code")
         parser.add_argument("path", help="Path to file or directory in share")
-        parser.add_argument(
-            "-p",
-            "--password",
-            default=None,
-            help="Share password (receive code)",
-        )
 
     def execute(self, args: argparse.Namespace) -> None:
-        share_code, parsed_password = parse_share_url(args.url)
-        password = args.password or parsed_password
+        share_code, password = self.resolve_share(args)
 
         client = self._create_client()
         entry = client.share.stat(share_code, args.path, password=password)
         self.output(format_entry(entry), args)
+
+
+class ShareSaveCommand(BaseShareCommand):
+    """Save entries from a shared link to your account."""
+
+    def register(self, parser: argparse.ArgumentParser) -> None:
+        super().register(parser)
+        parser.add_argument(
+            "path",
+            nargs="?",
+            default="/",
+            help="Path in the shared link to save from (default: /)",
+        )
+        parser.add_argument(
+            "--dest",
+            default="/",
+            help="Destination folder path in your account (default: /)",
+        )
+        parser.add_argument(
+            "--include",
+            action="append",
+            default=None,
+            metavar="PATTERN",
+            help=(
+                "Glob pattern for entry names to include under --path "
+                "(may be repeated)"
+            ),
+        )
+        parser.add_argument(
+            "--exclude",
+            action="append",
+            default=None,
+            metavar="PATTERN",
+            help=(
+                "Glob pattern for entry names to exclude under --path "
+                "(may be repeated)"
+            ),
+        )
+
+    def execute(self, args: argparse.Namespace) -> None:
+        share_code, password = self.resolve_share(args)
+
+        client = self._create_client()
+        base_entry = client.share.stat(share_code, args.path, password=password)
+        if base_entry.is_directory:
+            entries = list(
+                client.share.list(
+                    share_code,
+                    password=password,
+                    path=base_entry.path or args.path,
+                )
+            )
+        else:
+            entries = [base_entry]
+
+        selected = _filter_entries(
+            entries,
+            include=args.include,
+            exclude=args.exclude,
+        )
+        if not selected:
+            print("No entries matched include/exclude patterns")
+            return
+
+        client.share.save(
+            share_code,
+            [entry.id for entry in selected],
+            password=password,
+            dest_dir=args.dest,
+        )
+        print(f"Saved {len(selected)} item(s) to {args.dest}")
 
 
 class ShareCommand(MultiCommand):
@@ -132,4 +194,22 @@ class ShareCommand(MultiCommand):
         ("info", ShareInfoCommand),
         ("list", ShareListCommand),
         ("stat", ShareStatCommand),
+        ("save", ShareSaveCommand),
     ]
+
+
+def _filter_entries(
+    entries: list[FileSystemEntry],
+    *,
+    include: list[str] | None,
+    exclude: list[str] | None,
+) -> list[FileSystemEntry]:
+    filtered: list[FileSystemEntry] = []
+    for entry in entries:
+        name = entry.name
+        if include and not any(fnmatch(name, pattern) for pattern in include):
+            continue
+        if exclude and any(fnmatch(name, pattern) for pattern in exclude):
+            continue
+        filtered.append(entry)
+    return filtered

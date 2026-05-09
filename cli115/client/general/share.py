@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import os
+from typing import Sequence
 
 from cli115.client.base import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     ShareClient as BaseShareClient,
 )
-from cli115.client.models import Pagination, ShareDirectory, ShareFile, ShareInfo
+from cli115.client.models import (
+    Directory,
+    Pagination,
+    ShareDirectory,
+    ShareFile,
+    ShareInfo,
+)
 from cli115.client.utils import parse_item, parse_ts
 from cli115.helpers import join_path, normalize_path
 from .base import BaseClient, Endpoint
@@ -58,6 +65,31 @@ class ShareClient(BaseShareClient, BaseClient):
         password: str | None = None,
     ) -> ShareDirectory | ShareFile:
         return self._resolve_entry(share_code, path, password=password)
+
+    def save(
+        self,
+        share_code: str,
+        file_ids: Sequence[str],
+        *,
+        password: str | None = None,
+        dest_dir: str | Directory = "/",
+    ) -> None:
+        ids = [str(file_id) for file_id in file_ids if str(file_id)]
+        if not ids:
+            return
+
+        receive_code = (password or "").strip()
+        payload = self._base_params(share_code, receive_code)
+        payload.update(
+            {
+                "file_id": ",".join(ids),
+                "cid": self._resolve_dir_id(dest_dir),
+            }
+        )
+        self._api.post(
+            Endpoint.WEBAPI + "/share/receive",
+            data=payload,
+        )
 
     def _list(
         self,

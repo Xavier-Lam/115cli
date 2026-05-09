@@ -1,5 +1,6 @@
 from datetime import datetime
 from unittest.mock import MagicMock
+from urllib.parse import parse_qs
 
 from httpx import MockTransport, Request, Response
 
@@ -285,3 +286,59 @@ class TestShareClient:
         assert isinstance(entry, Directory)
         assert entry.id == "0"
         assert entry.path == "/"
+
+    def test_save(self):
+        captured = {
+            "paths": [],
+            "getid_params": {},
+            "receive_payload": {},
+        }
+
+        def handler(request: Request) -> Response:
+            captured["paths"].append(request.url.path)
+            if request.url.path == "/files/getid":
+                captured["getid_params"] = dict(request.url.params)
+                return Response(200, json={"id": "900"})
+            if request.url.path == "/share/receive":
+                captured["receive_payload"] = {
+                    key: values[0]
+                    for key, values in parse_qs(request.content.decode()).items()
+                }
+                return Response(
+                    200,
+                    json={"state": True, "error": "", "errno": 0, "data": {}},
+                )
+            raise AssertionError(f"unexpected path: {request.url.path}")
+
+        client = self._make_client(handler)
+        try:
+            client.share.save(
+                "swzadyu3zs9",
+                ["201", "202"],
+                password="azhy",
+                dest_dir="/backup",
+            )
+        finally:
+            client.share._api.close()
+
+        assert captured["paths"] == ["/files/getid", "/share/receive"]
+        assert captured["getid_params"]["path"] == "/backup"
+        assert captured["receive_payload"]["share_code"] == "swzadyu3zs9"
+        assert captured["receive_payload"]["receive_code"] == "azhy"
+        assert captured["receive_payload"]["file_id"] == "201,202"
+        assert captured["receive_payload"]["cid"] == "900"
+
+    def test_save_with_no_file_ids(self):
+        def handler(_: Request) -> Response:
+            raise AssertionError("save should not call API when no file id is provided")
+
+        client = self._make_client(handler)
+        try:
+            client.share.save(
+                "swzadyu3zs9",
+                [],
+                password="azhy",
+                dest_dir="/",
+            )
+        finally:
+            client.share._api.close()

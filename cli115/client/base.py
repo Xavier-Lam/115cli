@@ -27,7 +27,6 @@ from cli115.client.models import (
     Usage,
 )
 from cli115.client.lazy import LazyPathCollection, LazyCollection
-from cli115.helpers import normalize_path
 
 DEFAULT_PAGE_SIZE = 200  # Default number of items to return in list operations
 MAX_PAGE_SIZE = 1150  # 1150 is the maximum page size allowed by the API
@@ -670,6 +669,25 @@ class ShareClient(ABC):
         password: str | None = None,
     ) -> ShareDirectory | ShareFile:
         """Get info for a shared file or directory at the given path."""
+
+    @abstractmethod
+    def save(
+        self,
+        share_code: str,
+        file_ids: Sequence[str],
+        *,
+        password: str | None = None,
+        dest_dir: str | Directory = "/",
+    ) -> None:
+        """Save selected shared entries to the user's account.
+
+        Args:
+            share_code: Share code.
+            file_ids: IDs of shared entries to save.
+            password: Optional receive code.
+            dest_dir: Destination directory path or :class:`Directory` in the
+                user's account.
+        """
 
 
 class RemoteFile:

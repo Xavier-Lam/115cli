@@ -3,7 +3,12 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from cli115.client.models import Directory, File, ShareInfo
-from cli115.cmds.share import ShareInfoCommand, ShareListCommand, ShareStatCommand
+from cli115.cmds.share import (
+    ShareInfoCommand,
+    ShareListCommand,
+    ShareSaveCommand,
+    ShareStatCommand,
+)
 from tests.helpers import make_lazy, make_parser
 
 
@@ -39,9 +44,9 @@ def _make_dir(name: str = "docs") -> Directory:
     )
 
 
-def _make_file(name: str = "guide.txt") -> File:
+def _make_file(name: str = "guide.txt", file_id: str = "201") -> File:
     return File(
-        id="201",
+        id=file_id,
         parent_id="100",
         name=name,
         path=f"/docs/{name}",
@@ -205,3 +210,141 @@ class TestShareStatCommand:
         assert data["Path"] == "/docs/guide.txt"
         assert data["Type"] == "File"
         assert data["Size"] == 4096
+
+
+class TestShareSaveCommand:
+    @patch.object(ShareSaveCommand, "_create_client")
+    def test_save_directory(self, mock_create_client, capsys):
+        mock_client = MagicMock()
+        mock_client.share.stat.return_value = _make_dir(name="docs")
+        mock_client.share.list.return_value = make_lazy(
+            [
+                _make_dir(name="books"),
+                _make_file(name="guide.txt", file_id="201"),
+            ]
+        )
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "save",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "/docs",
+                "--dest",
+                "/backup",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.stat.assert_called_once_with(
+            "swzadyu3zs9",
+            "/docs",
+            password="azhy",
+        )
+        mock_client.share.list.assert_called_once_with(
+            "swzadyu3zs9",
+            password="azhy",
+            path="/docs",
+        )
+        mock_client.share.save.assert_called_once_with(
+            "swzadyu3zs9",
+            ["100", "201"],
+            password="azhy",
+            dest_dir="/backup",
+        )
+
+        assert "Saved 2 item(s) to /backup" in capsys.readouterr().out
+
+    @patch.object(ShareSaveCommand, "_create_client")
+    def test_save_with_patterns(self, mock_create_client):
+        mock_client = MagicMock()
+        mock_client.share.stat.return_value = _make_dir(name="docs")
+        mock_client.share.list.return_value = make_lazy(
+            [
+                _make_file(name="guide.txt", file_id="201"),
+                _make_file(name="notes.md", file_id="202"),
+            ]
+        )
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "save",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "/docs",
+                "--dest",
+                "/backup",
+                "--include",
+                "*.txt",
+                "--exclude",
+                "notes.*",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.save.assert_called_once_with(
+            "swzadyu3zs9",
+            ["201"],
+            password="azhy",
+            dest_dir="/backup",
+        )
+
+    @patch.object(ShareSaveCommand, "_create_client")
+    def test_save_single_file(self, mock_create_client):
+        mock_client = MagicMock()
+        mock_client.share.stat.return_value = _make_file(
+            name="guide.txt",
+            file_id="201",
+        )
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "save",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "/docs/guide.txt",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.list.assert_not_called()
+        mock_client.share.save.assert_called_once_with(
+            "swzadyu3zs9",
+            ["201"],
+            password="azhy",
+            dest_dir="/",
+        )
+
+    @patch.object(ShareSaveCommand, "_create_client")
+    def test_save_no_match(self, mock_create_client, capsys):
+        mock_client = MagicMock()
+        mock_client.share.stat.return_value = _make_dir(name="docs")
+        mock_client.share.list.return_value = make_lazy(
+            [
+                _make_file(name="guide.txt", file_id="201"),
+                _make_file(name="notes.md", file_id="202"),
+            ]
+        )
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "save",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "/docs",
+                "--include",
+                "*.pdf",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.save.assert_not_called()
+        assert "No entries matched include/exclude patterns" in capsys.readouterr().out
