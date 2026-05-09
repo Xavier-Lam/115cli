@@ -5,7 +5,7 @@ import json
 import os
 from typing import BinaryIO
 
-import httpx
+import httpcore
 from p115cipher import ecdh_aes_decrypt, make_upload_payload
 
 from cli115.client.base import (
@@ -26,7 +26,7 @@ from cli115.client.models import (
     SortOrder,
     UploadStatus,
 )
-from cli115.client.utils import parse_item, parse_ts
+from cli115.client.utils import create_multipart_request, parse_item, parse_ts
 from cli115.exceptions import InstantUploadNotAvailableError
 from cli115.helpers import normalize_path, sha1_file, join_path
 from .base import (
@@ -374,21 +374,37 @@ class FileClient(BaseFileClient, BaseClient):
             Endpoint.UPLB + "/3.0/sampleinitupload.php",
             data={"filename": filename, "target": f"U_1_{pid}"},
         ).json()
-        resp = httpx.post(
+
+        fields = {
+            "name": filename,
+            "key": sample_info["object"],
+            "policy": sample_info["policy"],
+            "OSSAccessKeyId": sample_info["accessid"],
+            "success_action_status": "200",
+            "callback": sample_info["callback"],
+            "signature": sample_info["signature"],
+        }
+
+        request = create_multipart_request(
             sample_info["host"],
-            data={
-                "name": filename,
-                "key": sample_info["object"],
-                "policy": sample_info["policy"],
-                "OSSAccessKeyId": sample_info["accessid"],
-                "success_action_status": "200",
-                "callback": sample_info["callback"],
-                "signature": sample_info["signature"],
-            },
-            files={"file": (filename, file)},
-            timeout=None,
+            data=fields,
+            filename=filename,
+            file=file,
         )
-        data = resp.json()
+
+        with httpcore.ConnectionPool() as pool:
+            response = pool.handle_request(request)
+            try:
+                body = response.read()
+            finally:
+                response.close()
+
+        if response.status >= 400:
+            raise OSError(
+                f"sample upload request failed: status={response.status}, body={body!r}"
+            )
+
+        data = json.loads(body)
         data["oss_info"] = sample_info
         return data
 
