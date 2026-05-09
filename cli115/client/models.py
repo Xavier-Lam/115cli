@@ -123,6 +123,16 @@ class File(FileSystemEntry):
         return False
 
 
+@dataclass
+class ShareDirectory(Directory):
+    """A directory entry from a shared link."""
+
+
+@dataclass
+class ShareFile(File):
+    """A file entry from a shared link."""
+
+
 # endregion
 # region Data Models
 

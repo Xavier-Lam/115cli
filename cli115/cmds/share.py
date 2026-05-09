@@ -4,9 +4,29 @@ from __future__ import annotations
 
 import argparse
 
-from cli115.cmds.base import BaseCommand, MultiCommand
-from cli115.cmds.formatter import PairFormatterMixin
-from cli115.helpers import parse_share_url
+from cli115.client import File, FileSystemEntry
+from cli115.cmds.base import BaseCommand, MultiCommand, PaginationCommand
+from cli115.cmds.formatter import format_entry, ListFormatterMixin, PairFormatterMixin
+from cli115.helpers import format_size, parse_share_url
+
+
+def _share_record(entry: FileSystemEntry) -> list[tuple[str, object]]:
+    if isinstance(entry, File):
+        size: object = format_size(entry.size)
+        ftype: object = entry.file_type or "-"
+    else:
+        size = "-"
+        ftype = "dir"
+    mtime = (
+        entry.modified_time.strftime("%Y-%m-%d %H:%M") if entry.modified_time else "-"
+    )
+    return [
+        ("Name", entry.name + ("/" if entry.is_directory else "")),
+        ("Type", ftype),
+        ("Size", size),
+        ("Modified", mtime),
+        ("ID", entry.id),
+    ]
 
 
 class ShareInfoCommand(PairFormatterMixin, BaseCommand):
@@ -47,9 +67,69 @@ class ShareInfoCommand(PairFormatterMixin, BaseCommand):
         )
 
 
+class ShareListCommand(ListFormatterMixin, PaginationCommand):
+    """List entries in a shared link."""
+
+    def register(self, parser: argparse.ArgumentParser) -> None:
+        super().register(parser)
+        parser.add_argument("url", help="Share URL or share code")
+        parser.add_argument(
+            "path",
+            nargs="?",
+            default="/",
+            help="Directory path inside the shared link (default: /)",
+        )
+        parser.add_argument(
+            "-p",
+            "--password",
+            default=None,
+            help="Share password (receive code)",
+        )
+
+    def execute(self, args: argparse.Namespace) -> None:
+        share_code, parsed_password = parse_share_url(args.url)
+        password = args.password or parsed_password
+
+        client = self._create_client()
+        collection = client.share.list(
+            share_code,
+            password=password,
+            path=args.path,
+        )
+
+        entries = self.apply_pagination(collection, args)
+        records = [_share_record(entry) for entry in entries]
+        self.output(records, args)
+
+
+class ShareStatCommand(PairFormatterMixin, BaseCommand):
+    """Show metadata for a single shared file or directory."""
+
+    def register(self, parser: argparse.ArgumentParser) -> None:
+        super().register(parser)
+        parser.add_argument("url", help="Share URL or share code")
+        parser.add_argument("path", help="Path to file or directory in share")
+        parser.add_argument(
+            "-p",
+            "--password",
+            default=None,
+            help="Share password (receive code)",
+        )
+
+    def execute(self, args: argparse.Namespace) -> None:
+        share_code, parsed_password = parse_share_url(args.url)
+        password = args.password or parsed_password
+
+        client = self._create_client()
+        entry = client.share.stat(share_code, args.path, password=password)
+        self.output(format_entry(entry), args)
+
+
 class ShareCommand(MultiCommand):
     """Share link operations."""
 
     subcommands = [
         ("info", ShareInfoCommand),
+        ("list", ShareListCommand),
+        ("stat", ShareStatCommand),
     ]

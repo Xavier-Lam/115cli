@@ -17,6 +17,8 @@ from cli115.client.models import (
     File,
     FileSystemEntry,
     Pagination,
+    ShareDirectory,
+    ShareFile,
     ShareInfo,
     SortField,
     SortOrder,
@@ -25,6 +27,7 @@ from cli115.client.models import (
     Usage,
 )
 from cli115.client.lazy import LazyPathCollection, LazyCollection
+from cli115.helpers import normalize_path
 
 DEFAULT_PAGE_SIZE = 200  # Default number of items to return in list operations
 MAX_PAGE_SIZE = 1150  # 1150 is the maximum page size allowed by the API
@@ -166,22 +169,6 @@ class DownloadClient(ABC):
 
         Args:
             info_hash: info_hash of the task to retry.
-        """
-
-
-class ShareClient(ABC):
-    """Abstract interface for public share operations."""
-
-    @abstractmethod
-    def info(self, share_code: str, password: str | None = None) -> ShareInfo:
-        """Get basic metadata for a share.
-
-        Args:
-            share_code: Share code.
-            password: Optional receive code.
-
-        Returns:
-            A :class:`ShareInfo` describing the share.
         """
 
 
@@ -610,6 +597,79 @@ class FileClient(ABC):
         """
         info = self.url(path, user_agent=user_agent)
         return RemoteFile(info)
+
+
+class ShareClient(ABC):
+    """Abstract interface for public share operations."""
+
+    @abstractmethod
+    def info(self, share_code: str, password: str | None = None) -> ShareInfo:
+        """Get basic metadata for a share.
+
+        Args:
+            share_code: Share code.
+            password: Optional receive code.
+
+        Returns:
+            A :class:`ShareInfo` describing the share.
+        """
+
+    def list(
+        self,
+        share_code: str,
+        password: str | None = None,
+        path: str | ShareDirectory = "/",
+    ) -> Sequence[ShareDirectory | ShareFile]:
+        """Return a lazy collection of entries under a shared path.
+
+        Warning: Avoid fully loading all items if you don't know the total
+        number of items, as this will trigger many API requests.
+        """
+
+        def fetch(
+            page: int, page_size: int
+        ) -> tuple[list[ShareDirectory | ShareFile], Pagination]:
+            return self._list(
+                share_code,
+                password=password,
+                path=path,
+                limit=page_size,
+                offset=(page - 1) * page_size,
+            )
+
+        return LazyCollection(fetch, page_size=100)
+
+    @abstractmethod
+    def _list(
+        self,
+        share_code: str,
+        password: str | None = None,
+        path: str | ShareDirectory = "/",
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ShareDirectory | ShareFile], Pagination]:
+        """List files and directories under a shared path.
+
+        Args:
+            share_code: Share code.
+            password: Optional receive code.
+            path: Directory path or :class:`ShareDirectory` object.
+            limit: Maximum number of items to return.
+            offset: Pagination offset.
+
+        Returns:
+            A tuple of (items, pagination).
+        """
+
+    @abstractmethod
+    def stat(
+        self,
+        share_code: str,
+        path: str,
+        password: str | None = None,
+    ) -> ShareDirectory | ShareFile:
+        """Get info for a shared file or directory at the given path."""
 
 
 class RemoteFile:

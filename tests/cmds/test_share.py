@@ -2,9 +2,9 @@ import json
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from cli115.client.models import ShareInfo
-from cli115.cmds.share import ShareInfoCommand
-from tests.helpers import make_parser
+from cli115.client.models import Directory, File, ShareInfo
+from cli115.cmds.share import ShareInfoCommand, ShareListCommand, ShareStatCommand
+from tests.helpers import make_lazy, make_parser
 
 
 def _make_share_info(receive_code: str = "azhy") -> ShareInfo:
@@ -22,6 +22,37 @@ def _make_share_info(receive_code: str = "azhy") -> ShareInfo:
         created_time=datetime(2024, 6, 22, 10, 0, 0),
         expire_time=None,
         is_available=True,
+    )
+
+
+def _make_dir(name: str = "docs") -> Directory:
+    return Directory(
+        id="100",
+        parent_id="0",
+        name=name,
+        path=f"/{name}",
+        pickcode="pc-dir",
+        created_time=datetime(2024, 6, 22, 10, 0, 0),
+        modified_time=datetime(2024, 6, 22, 10, 0, 0),
+        open_time=None,
+        file_count=2,
+    )
+
+
+def _make_file(name: str = "guide.txt") -> File:
+    return File(
+        id="201",
+        parent_id="100",
+        name=name,
+        path=f"/docs/{name}",
+        pickcode="pc-file",
+        created_time=datetime(2024, 6, 22, 10, 0, 0),
+        modified_time=datetime(2024, 6, 22, 10, 0, 0),
+        open_time=None,
+        size=4096,
+        sha1="ABC123",
+        file_type="txt",
+        starred=False,
     )
 
 
@@ -81,3 +112,96 @@ class TestShareInfoCommand:
             "swzadyu3zs9",
             password="wxyz",
         )
+
+
+class TestShareListCommand:
+    @patch.object(ShareListCommand, "_create_client")
+    def test_list(self, mock_create_client, capsys):
+        mock_client = MagicMock()
+        mock_client.share.list.return_value = make_lazy([_make_dir(), _make_file()])
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "list",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "/docs",
+                "--format",
+                "json",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.list.assert_called_once_with(
+            "swzadyu3zs9",
+            password="azhy",
+            path="/docs",
+        )
+
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 2
+        assert data[0]["Name"] == "docs/"
+        assert data[0]["Type"] == "dir"
+        assert data[1]["Name"] == "guide.txt"
+        assert data[1]["Type"] == "txt"
+        assert data[1]["Size"] == "4.0 KB"
+
+    @patch.object(ShareListCommand, "_create_client")
+    def test_list_with_password(self, mock_create_client):
+        mock_client = MagicMock()
+        mock_client.share.list.return_value = make_lazy([])
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "list",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "-p",
+                "wxyz",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.list.assert_called_once_with(
+            "swzadyu3zs9",
+            password="wxyz",
+            path="/",
+        )
+
+
+class TestShareStatCommand:
+    @patch.object(ShareStatCommand, "_create_client")
+    def test_stat(self, mock_create_client, capsys):
+        mock_client = MagicMock()
+        mock_client.share.stat.return_value = _make_file()
+        mock_create_client.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(
+            [
+                "share",
+                "stat",
+                "https://115cdn.com/s/swzadyu3zs9?password=azhy",
+                "/docs/guide.txt",
+                "--format",
+                "json",
+            ]
+        )
+        cmds["share"].execute(args)
+
+        mock_client.share.stat.assert_called_once_with(
+            "swzadyu3zs9",
+            "/docs/guide.txt",
+            password="azhy",
+        )
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["Name"] == "guide.txt"
+        assert data["ID"] == "201"
+        assert data["Path"] == "/docs/guide.txt"
+        assert data["Type"] == "File"
+        assert data["Size"] == 4096
