@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from cli115.api.web.p115client import check_response
-from cli115.client.base import AccountClient
+from cli115.client.base import AccountClient as BaseAccountClient
 from cli115.client.models import AccountInfo, Usage
-from cli115.client.webapi.base import BaseClient
+from .base import BaseClient, Endpoint
 
 
-class WebAPIAccountClient(AccountClient, BaseClient):
+class AccountClient(BaseAccountClient, BaseClient):
 
     def info(self) -> AccountInfo:
-        resp = self._api.user_my()
-        check_response(resp)
-        data = resp.get("data", {})
+        resp = self._api.get(
+            Endpoint.MY,
+            params={"ct": "ajax", "ac": "nav"},
+        )
+        data = resp.json()["data"]
         expire_ts = data.get("expire")
         expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
         return AccountInfo(
@@ -24,9 +25,11 @@ class WebAPIAccountClient(AccountClient, BaseClient):
         )
 
     def usage(self) -> Usage:
-        resp = self._api.fs_index_info()
-        check_response(resp)
-        space = resp.get("data", {}).get("space_info", {})
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/index_info",
+            params={"count_space_nums": 0},
+        )
+        space = resp.json()["data"]["space_info"]
         return Usage(
             total=int(space.get("all_total", {}).get("size", 0)),
             used=int(space.get("all_use", {}).get("size", 0)),

@@ -1,5 +1,7 @@
 """Exception hierarchy for cli115."""
 
+from httpx import Response
+
 
 class APIError(Exception):
     """Base exception for all cli115 errors.
@@ -7,9 +9,12 @@ class APIError(Exception):
     Wraps errors returned by the 115 API.
     """
 
-    def __init__(self, message: str, errno: int = 0):
+    def __init__(self, message: str, errno: int = 0, response: Response | None = None):
         self.errno = errno
+        self.response = response
         message = f"[{errno}] {message}" if errno else message
+        if response is not None and response._request:
+            message = f"{message} (URL: {response.url})"
         super().__init__(message)
 
 

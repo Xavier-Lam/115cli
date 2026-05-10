@@ -115,14 +115,14 @@ class TestDownloadCommand:
     @patch.object(DownloadAddCommand, "_create_client")
     def test_add_single(self, mock_create, capsys):
         mock_client = MagicMock()
-        mock_client.download.add_url.return_value = _make_task()
+        mock_client.download.add_urls.return_value = [_make_task()]
         mock_create.return_value = mock_client
 
         parser, cmds = _build_parser()
         args = parser.parse_args(["download", "add", "https://example.com/file.png"])
         cmds["download"].execute(args)
 
-        mock_client.download.add_url.assert_called_once_with(
+        mock_client.download.add_urls.assert_called_once_with(
             "https://example.com/file.png", dest_dir=None
         )
         assert "abc123hash" in capsys.readouterr().out
@@ -130,7 +130,7 @@ class TestDownloadCommand:
     @patch.object(DownloadAddCommand, "_create_client")
     def test_add_single_with_dest(self, mock_create):
         mock_client = MagicMock()
-        mock_client.download.add_url.return_value = _make_task()
+        mock_client.download.add_urls.return_value = [_make_task()]
         mock_create.return_value = mock_client
 
         parser, cmds = _build_parser()
@@ -139,7 +139,7 @@ class TestDownloadCommand:
         )
         cmds["download"].execute(args)
 
-        mock_client.download.add_url.assert_called_once_with(
+        mock_client.download.add_urls.assert_called_once_with(
             "https://example.com/file.png", dest_dir="/my/folder"
         )
 

@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from cli115.cli import build_parser, load_config, main, DEFAULT_CREDENTIALS_DIR
-from cli115.client.webapi import DEFAULT_USER_AGENT
+from cli115.client.general import DEFAULT_USER_AGENT
 from cli115.cmds.ls import LsCommand
 from cli115.credentials import CredentialManager
 from cli115.exceptions import CommandLineError

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from typing import BinaryIO
 
-from cli115.api.web.p115client import check_response
+import httpcore
+from p115cipher import ecdh_aes_decrypt, make_upload_payload
+
 from cli115.client.base import (
-    FileClient,
     DEFAULT_PAGE_SIZE,
+    FileClient as BaseFileClient,
     MAX_PAGE_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
     RemoteFile,
@@ -22,25 +26,28 @@ from cli115.client.models import (
     SortOrder,
     UploadStatus,
 )
-from cli115.client.utils import parse_item, parse_ts
-from cli115.client.webapi.base import BaseClient
+from cli115.client.utils import create_multipart_request, parse_item, parse_ts
 from cli115.exceptions import InstantUploadNotAvailableError
 from cli115.helpers import normalize_path, sha1_file, join_path
-
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
+from .base import (
+    APP_USER_AGENT,
+    APP_VERSION,
+    BaseClient,
+    DEFAULT_USER_AGENT,
+    Endpoint,
 )
 
 
-class WebAPIFileClient(FileClient, BaseClient):
+class FileClient(BaseFileClient, BaseClient):
 
     # -- public API --
 
     def id(self, file_id: str) -> Directory | File:
-        resp = self._api.fs_file(file_id)
-        resp = check_response(resp)
-        data = resp.get("data", [])
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/get_info",
+            params={"file_id": file_id},
+        )
+        data = resp.json()["data"]
         if not data:
             raise FileNotFoundError(f"file id not found: {file_id}")
         item = parse_item(data[0])
@@ -64,28 +71,33 @@ class WebAPIFileClient(FileClient, BaseClient):
         else:
             path = normalize_path(path)
             dir_id = self._resolve_dir_id(path)
-        # both fs_order_set and fs_files need to be called to get correct
+        # both /files/order and /files need to be called to get correct
         # sorting results, otherwise the sorting parameters are ignored
-        self._api.fs_order_set(
-            {
+        self._api.post(
+            Endpoint.WEBAPI + "/files/order",
+            data={
                 "file_id": dir_id,
                 "user_order": sort.value,
                 "user_asc": sort_order.value,
+                # mix files and directories together in the listing, instead of
+                # always listing directories first
                 "fc_mix": 1,
-            }
+            },
         )
-        resp = self._api.fs_files(
-            {
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files",
+            params={
+                "aid": 1,  # normal files
                 "cid": dir_id,
                 "offset": offset,
                 "limit": min(limit, MAX_PAGE_SIZE),
+                "show_dir": 1,
                 "natsort": 1,
                 "o": sort.value,
                 "asc": sort_order.value,
                 "fc_mix": 1,
-            }
-        )
-        resp = check_response(resp)
+            },
+        ).json()
 
         items: list[Directory | File] = []
         for raw in resp.get("data", []):
@@ -113,12 +125,17 @@ class WebAPIFileClient(FileClient, BaseClient):
             "search_value": query,
             "offset": offset,
             "limit": min(limit, MAX_PAGE_SIZE),
+            "aid": 1,  # normal files
+            "cid": "0",
+            "show_dir": 1,
         }
         if path is not None:
             payload["cid"] = self._resolve_dir_id(path)
 
-        resp = self._api.fs_search(payload)
-        resp = check_response(resp)
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/search",
+            params=payload,
+        ).json()
 
         items: list[Directory | File] = []
         for raw in resp.get("data", []):
@@ -146,8 +163,10 @@ class WebAPIFileClient(FileClient, BaseClient):
             pid = parent_dir.id
 
         try:
-            resp = self._api.fs_mkdir(name, pid=pid)
-            resp = check_response(resp)
+            resp = self._api.post(
+                Endpoint.WEBAPI + "/files/add",
+                data={"cname": name, "pid": pid},
+            ).json()
         except FileExistsError:
             if parents:
                 return self.stat(path)  # directory already exists, return it
@@ -169,8 +188,10 @@ class WebAPIFileClient(FileClient, BaseClient):
             items = self.list(path)
             if len(items) > 0:
                 raise FileExistsError(f"directory is not empty: {path}")
-        resp = self._api.fs_delete(entry.id)
-        check_response(resp)
+        self._api.post(
+            Endpoint.WEBAPI + "/rb/delete",
+            data={"fid": entry.id},
+        )
 
     def batch_delete(
         self, *paths: str | FileSystemEntry, recursive: bool = False
@@ -178,41 +199,43 @@ class WebAPIFileClient(FileClient, BaseClient):
         if recursive:
             raise NotImplementedError("recursive batch delete is not yet supported")
         ids = [self._resolve_id(p) for p in paths]
-        resp = self._api.fs_delete(ids)
-        check_response(resp)
+        self._api.post(
+            Endpoint.WEBAPI + "/rb/delete",
+            data={f"fid[{i}]": id_ for i, id_ in enumerate(ids)},
+        )
 
     def rename(self, path: str | FileSystemEntry, name: str) -> None:
         file_id = self._resolve_id(path)
-        resp = self._api.fs_rename((file_id, name))
-        check_response(resp)
+        self._api.post(
+            Endpoint.WEBAPI + "/files/batch_rename",
+            data={f"files_new_name[{file_id}]": name},
+        )
 
     def move(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
-        src_id = self._resolve_id(src)
-        dest_id = self._resolve_dir_id(dest_dir)
-        resp = self._api.fs_move(src_id, pid=dest_id)
-        check_response(resp)
+        self.batch_move(src, dest_dir=dest_dir)
 
     def batch_move(
         self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
     ) -> None:
         src_ids = [self._resolve_id(s) for s in srcs]
         dest_id = self._resolve_dir_id(dest_dir)
-        resp = self._api.fs_move(src_ids, pid=dest_id)
-        check_response(resp)
+        self._api.post(
+            Endpoint.WEBAPI + "/files/move",
+            data={f"fid[{i}]": id_ for i, id_ in enumerate(src_ids)} | {"pid": dest_id},
+        )
 
     def copy(self, src: str | FileSystemEntry, dest_dir: str | Directory) -> None:
-        src_id = self._resolve_id(src)
-        dest_id = self._resolve_dir_id(dest_dir)
-        resp = self._api.fs_copy(src_id, pid=dest_id)
-        check_response(resp)
+        self.batch_copy(src, dest_dir=dest_dir)
 
     def batch_copy(
         self, *srcs: str | FileSystemEntry, dest_dir: str | Directory
     ) -> None:
         src_ids = [self._resolve_id(s) for s in srcs]
         dest_id = self._resolve_dir_id(dest_dir)
-        resp = self._api.fs_copy(src_ids, pid=dest_id)
-        check_response(resp)
+        self._api.post(
+            Endpoint.WEBAPI + "/files/copy",
+            data={f"fid[{i}]": id_ for i, id_ in enumerate(src_ids)} | {"pid": dest_id},
+        )
 
     def _upload(
         self,
@@ -248,21 +271,15 @@ class WebAPIFileClient(FileClient, BaseClient):
             status.set_message("attempting instant upload")
             force_instant = instant_only is not None and file_size >= instant_only
             try:
-                success = self._try_instant_upload(
+                self._try_instant_upload(
                     file=file,
                     filename=filename,
                     file_size=file_size,
                     sha1=sha1,
                     dir_id=dir_id,
-                    path=path,
                 )
-                if success:
-                    status.is_instant_uploaded = True
-                    return self.stat(path)
-                else:
-                    raise InstantUploadNotAvailableError(
-                        "instant upload is not available (file not found on server)"
-                    )
+                status.is_instant_uploaded = True
+                return self.stat(path)
             except Exception as exc:
                 status.instant_upload_error = exc
                 if force_instant:
@@ -274,9 +291,8 @@ class WebAPIFileClient(FileClient, BaseClient):
 
         status.is_instant_uploaded = False
         with status.start_upload(file_size) as progress, progress.patch_file(file):
-            resp = self._api.upload_file_sample(file, pid=dir_id, filename=filename)
-        resp = check_response(resp)
-        data = resp.get("data", {})
+            resp = self._upload_file_sample(file, pid=dir_id, filename=filename)
+        data = resp["data"]
 
         status.set_message("upload completed")
 
@@ -301,8 +317,7 @@ class WebAPIFileClient(FileClient, BaseClient):
         file_size: int,
         sha1: str,
         dir_id: str,
-        path: str,
-    ) -> bool:
+    ) -> None:
         """Attempt instant upload.  Return `True` on success, `False` if the
         server does not have this file and a regular upload is required."""
 
@@ -312,26 +327,108 @@ class WebAPIFileClient(FileClient, BaseClient):
             file.seek(start)
             return file.read(end - start + 1)
 
-        resp = self._api.upload_file_init(
+        upload_info = self._api.get(Endpoint.PROAPI + "/app/uploadinfo").json()
+
+        payload = {
+            "filename": filename,
+            "fileid": sha1.upper(),
+            "filesize": file_size,
+            "target": f"U_1_{dir_id}",
+            "appid": 0,
+            "sign_key": "",
+            "sign_val": "",
+            "topupload": "true",
+            "appversion": APP_VERSION,
+            "userid": upload_info["user_id"],
+            "userkey": upload_info["userkey"],
+        }
+        resp = self._post_upload_init(payload)
+        status = int(resp["status"])
+        if status == 7:
+            sign_check = str(resp.get("sign_check", ""))
+            payload["sign_key"] = str(resp.get("sign_key", ""))
+            payload["sign_val"] = (
+                hashlib.sha1(read_range(sign_check)).hexdigest().upper()
+            )
+            resp = self._post_upload_init(payload)
+            status = int(resp["status"])
+
+        if status != 2:
+            raise InstantUploadNotAvailableError(
+                "instant upload is not available (file not found on server)"
+            )
+
+    def _post_upload_init(self, payload: dict) -> dict:
+        resp = self._api.post(
+            Endpoint.UPLB + "/4.0/initupload.php",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": APP_USER_AGENT,
+            },
+            **make_upload_payload(payload.copy()),
+        )
+        return json.loads(ecdh_aes_decrypt(resp.content, decompress=True))
+
+    def _upload_file_sample(self, file: BinaryIO, *, pid: str, filename: str) -> dict:
+        sample_info = self._api.post(
+            Endpoint.UPLB + "/3.0/sampleinitupload.php",
+            data={"filename": filename, "target": f"U_1_{pid}"},
+        ).json()
+
+        fields = {
+            "name": filename,
+            "key": sample_info["object"],
+            "policy": sample_info["policy"],
+            "OSSAccessKeyId": sample_info["accessid"],
+            "success_action_status": "200",
+            "callback": sample_info["callback"],
+            "signature": sample_info["signature"],
+        }
+
+        request = create_multipart_request(
+            sample_info["host"],
+            data=fields,
             filename=filename,
-            filesize=file_size,
-            filesha1=sha1,
-            read_range_bytes_or_hash=(read_range if file_size >= 1024 * 1024 else None),
-            pid=dir_id,
+            file=file,
         )
 
-        return bool(resp.get("reuse"))
+        with httpcore.ConnectionPool() as pool:
+            response = pool.handle_request(request)
+            try:
+                body = response.read()
+            finally:
+                response.close()
+
+        if response.status >= 400:
+            raise OSError(
+                f"sample upload request failed: status={response.status}, body={body!r}"
+            )
+
+        data = json.loads(body)
+        data["oss_info"] = sample_info
+        return data
 
     def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)
         if entry.is_directory:
             raise IsADirectoryError("cannot get download info for a directory")
 
-        ua = user_agent or DEFAULT_USER_AGENT
-        p115url = self._api.download_url(entry.pickcode, user_agent=ua)
-        cookie_str = "; ".join(f"{k}={m.value}" for k, m in self._api.cookies.items())
+        ua = user_agent or self._api.headers.get("User-Agent", DEFAULT_USER_AGENT)
+        resp = self._api.post_encrypted(
+            Endpoint.PROAPI + "/app/chrome/downurl",
+            data={"pickcode": entry.pickcode},
+            headers={"User-Agent": ua},
+        )
+        raw_data = resp.json()
+        download_url = ""
+        for item in raw_data.values():
+            if isinstance(item, dict) and item["pick_code"] == entry.pickcode:
+                download_url = item["url"]["url"]
+                break
+
+        cookie_str = resp.request.headers["Cookie"]
         return DownloadUrl(
-            url=str(p115url),
+            url=download_url,
             file_name=entry.name,
             file_size=entry.size,
             sha1=entry.sha1,
@@ -364,27 +461,7 @@ class WebAPIFileClient(FileClient, BaseClient):
             )
         dirname = os.path.dirname(path)
         name = os.path.basename(path)
-        pid = self._resolve_dir_id(dirname)
-        offset = 0
-        while True:
-            resp = self._api.fs_files(
-                {
-                    "cid": pid,
-                    "aid": 1,
-                    "offset": offset,
-                    "limit": MAX_PAGE_SIZE,
-                    "show_dir": 1,
-                }
-            )
-            resp = check_response(resp)
-            data = resp.get("data", [])
-            for item in data:
-                if item.get("n") == name:
-                    rv = parse_item(item)
-                    rv.path = path
-                    return rv
-            total = int(resp.get("count", 0))
-            offset += len(data)
-            if offset >= total or not data:
-                break
+        for entry in self.list(dirname):
+            if entry.name == name:
+                return entry
         raise FileNotFoundError(f"entry not found: {path}")
