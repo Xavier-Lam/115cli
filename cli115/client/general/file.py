@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 from typing import BinaryIO
-
-import httpcore
-from p115cipher import ecdh_aes_decrypt, make_upload_payload
 
 from cli115.client.base import (
     DEFAULT_PAGE_SIZE,
@@ -26,19 +21,22 @@ from cli115.client.models import (
     SortOrder,
     UploadStatus,
 )
-from cli115.client.utils import create_multipart_request, parse_item, parse_ts
+from cli115.client.utils import parse_item, parse_ts
 from cli115.exceptions import InstantUploadNotAvailableError
 from cli115.helpers import normalize_path, sha1_file, join_path
 from .base import (
-    APP_USER_AGENT,
-    APP_VERSION,
     BaseClient,
     DEFAULT_USER_AGENT,
     Endpoint,
 )
+from .upload import MULTIPART_UPLOAD_PART_SIZE, UploadClient
 
 
 class FileClient(BaseFileClient, BaseClient):
+
+    def __init__(self, api):
+        super().__init__(api)
+        self._uploader = UploadClient(api)
 
     # -- public API --
 
@@ -267,11 +265,14 @@ class FileClient(BaseFileClient, BaseClient):
         status.set_message(f"file sha1 calculated: {sha1}, size: {file_size} bytes")
 
         # Only attempt instant upload when the file meets the minimum size.
+        # The initupload.php response (status=1) is preserved so a subsequent
+        # multipart upload can reuse the bucket/object/callback metadata.
+        init_data: dict | None = None
         if file_size >= MIN_INSTANT_UPLOAD_SIZE:
             status.set_message("attempting instant upload")
             force_instant = instant_only is not None and file_size >= instant_only
             try:
-                self._try_instant_upload(
+                self._uploader.instant_upload(
                     file=file,
                     filename=filename,
                     file_size=file_size,
@@ -284,14 +285,24 @@ class FileClient(BaseFileClient, BaseClient):
                 status.instant_upload_error = exc
                 if force_instant:
                     raise
+                if isinstance(exc, InstantUploadNotAvailableError):
+                    init_data = exc.response_data
             file.seek(0)
 
         if isinstance(file, RemoteFile):
-            file.set_stream(True)  # use streaming upload for RemoteFile
+            file.set_stream(True)
 
         status.is_instant_uploaded = False
         with status.start_upload(file_size) as progress, progress.patch_file(file):
-            resp = self._upload_file_sample(file, pid=dir_id, filename=filename)
+            if init_data and file_size > MULTIPART_UPLOAD_PART_SIZE:
+                resp = self._uploader.multipart_upload(
+                    file,
+                    bucket=init_data["bucket"],
+                    object=init_data["object"],
+                    callback=init_data["callback"],
+                )
+            else:
+                resp = self._uploader.simple_upload(file, pid=dir_id, filename=filename)
         data = resp["data"]
 
         status.set_message("upload completed")
@@ -308,105 +319,6 @@ class FileClient(BaseFileClient, BaseClient):
             sha1=data.get("sha1", ""),
             size=int(data.get("file_size", 0)),
         )
-
-    def _try_instant_upload(
-        self,
-        *,
-        file: BinaryIO,
-        filename: str,
-        file_size: int,
-        sha1: str,
-        dir_id: str,
-    ) -> None:
-        """Attempt instant upload.  Return `True` on success, `False` if the
-        server does not have this file and a regular upload is required."""
-
-        def read_range(range_str: str) -> bytes:
-            # sign_check format is "start-end" (inclusive), like HTTP Range.
-            start, end = [int(x) for x in range_str.split("-")]
-            file.seek(start)
-            return file.read(end - start + 1)
-
-        upload_info = self._api.get(Endpoint.PROAPI + "/app/uploadinfo").json()
-
-        payload = {
-            "filename": filename,
-            "fileid": sha1.upper(),
-            "filesize": file_size,
-            "target": f"U_1_{dir_id}",
-            "appid": 0,
-            "sign_key": "",
-            "sign_val": "",
-            "topupload": "true",
-            "appversion": APP_VERSION,
-            "userid": upload_info["user_id"],
-            "userkey": upload_info["userkey"],
-        }
-        resp = self._post_upload_init(payload)
-        status = int(resp["status"])
-        if status == 7:
-            sign_check = str(resp.get("sign_check", ""))
-            payload["sign_key"] = str(resp.get("sign_key", ""))
-            payload["sign_val"] = (
-                hashlib.sha1(read_range(sign_check)).hexdigest().upper()
-            )
-            resp = self._post_upload_init(payload)
-            status = int(resp["status"])
-
-        if status != 2:
-            raise InstantUploadNotAvailableError(
-                "instant upload is not available (file not found on server)"
-            )
-
-    def _post_upload_init(self, payload: dict) -> dict:
-        resp = self._api.post(
-            Endpoint.UPLB + "/4.0/initupload.php",
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": APP_USER_AGENT,
-            },
-            **make_upload_payload(payload.copy()),
-        )
-        return json.loads(ecdh_aes_decrypt(resp.content, decompress=True))
-
-    def _upload_file_sample(self, file: BinaryIO, *, pid: str, filename: str) -> dict:
-        sample_info = self._api.post(
-            Endpoint.UPLB + "/3.0/sampleinitupload.php",
-            data={"filename": filename, "target": f"U_1_{pid}"},
-        ).json()
-
-        fields = {
-            "name": filename,
-            "key": sample_info["object"],
-            "policy": sample_info["policy"],
-            "OSSAccessKeyId": sample_info["accessid"],
-            "success_action_status": "200",
-            "callback": sample_info["callback"],
-            "signature": sample_info["signature"],
-        }
-
-        request = create_multipart_request(
-            sample_info["host"],
-            data=fields,
-            filename=filename,
-            file=file,
-        )
-
-        with httpcore.ConnectionPool() as pool:
-            response = pool.handle_request(request)
-            try:
-                body = response.read()
-            finally:
-                response.close()
-
-        if response.status >= 400:
-            raise OSError(
-                f"sample upload request failed: status={response.status}, body={body!r}"
-            )
-
-        data = json.loads(body)
-        data["oss_info"] = sample_info
-        return data
 
     def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)

@@ -138,7 +138,11 @@ tasks = client.download.list()
 - **二维码登录** - 实现基于二维码的认证, 方便登录而无需手动提取 cookie.
 
 ## 致谢
-* [**p115client**](https://github.com/ChenyangGao/p115client) 提供了一些非web端API实现, 本项目的非web端接口来源于该项目.
+[**p115client**](https://github.com/ChenyangGao/p115client) 提供了一些非web端API实现, 本项目的非web端接口来源于该项目.
+
+* ECDH-AES 加密/解密文件内容和元数据.
+* 通过计算文件哈希并与对应API交互实现秒传支持.
+* 大文件的分片上传支持.
 
 ## 免责声明
 
