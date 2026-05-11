@@ -179,16 +179,19 @@ class UploadClient:
                 # part_size is a one-element list so the generator below can
                 # accumulate the total and the caller can read it afterwards.
                 part_size = [0]
+                md5 = hashlib.md5()
 
                 def _iter_part_content(first_chunk=peek):
                     remaining = MULTIPART_UPLOAD_PART_SIZE - len(first_chunk)
                     part_size[0] += len(first_chunk)
+                    md5.update(first_chunk)
                     yield first_chunk
                     while remaining > 0:
                         buf = file.read(min(_CHUNK_SIZE, remaining))
                         if not buf:
                             break
                         part_size[0] += len(buf)
+                        md5.update(buf)
                         remaining -= len(buf)
                         yield buf
 
@@ -196,6 +199,15 @@ class UploadClient:
                     url, upload_id, part_number, _iter_part_content(), token, pool
                 )
                 part["Size"] = part_size[0]
+
+                local_md5 = base64.b64encode(md5.digest()).decode()
+                server_md5 = part.pop("ContentMD5", "")
+                if server_md5 and server_md5 != local_md5:
+                    raise RuntimeError(
+                        f"part {part_number} MD5 mismatch: "
+                        f"expected {local_md5!r}, server returned {server_md5!r}"
+                    )
+
                 parts.append(part)
                 part_number += 1
 
@@ -256,7 +268,8 @@ class UploadClient:
             )
         headers_lower = {k.lower(): v for k, v in response.headers}
         etag = headers_lower.get(b"etag", b"").decode()
-        return {"PartNumber": part_number, "ETag": etag}
+        server_md5 = headers_lower.get(b"content-md5", b"").decode()
+        return {"PartNumber": part_number, "ETag": etag, "ContentMD5": server_md5}
 
     def _oss_multipart_upload_complete(
         self,
