@@ -122,7 +122,7 @@ def _iter_streaming_multipart_content(
     )
     yield b"Content-Type: application/octet-stream\r\n\r\n"
 
-    while chunk := file.read(64 * 1024):
+    while chunk := file.read(256 * 1024):
         yield chunk
 
     yield b"\r\n"

@@ -140,7 +140,10 @@ The project aims to cover the core features of 115 cloud storage. Planned additi
 - **QRCode login** - Implementing QR code-based authentication for easier login without needing to manually extract cookies.
 
 ## Credits
-* Some non-web API implementations are learned from [**p115client**](https://github.com/ChenyangGao/p115client), which provides some non-web API implementations.
+Some non-web API implementations are learned from [**p115client**](https://github.com/ChenyangGao/p115client), which provides some non-web API implementations. Include but not limited to:
+  * ECDH-AES encryption/decryption for file content and metadata.
+  * Instant upload support by calculating file hashes and interacting with the corresponding APIs.
+  * Multipart upload support for large files.
 
 ## Disclaimer
 

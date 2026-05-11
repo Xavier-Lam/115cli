@@ -1,14 +1,16 @@
 import hashlib
 import io
+import os
 import unittest.mock
 import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import cli115.client.general.file as file_module
 from cli115.client import File, general, UploadStatus
 from cli115.exceptions import InstantUploadNotAvailableError
-from tests.client.conftest import upload_file
+from tests.client.conftest import create_temp_file, upload_file
 
 
 class TestUpload:
@@ -34,6 +36,31 @@ class TestUpload:
         unchanged = api_client.file.stat(shared.file_small.path)
         assert unchanged.sha1 == shared.file_small.sha1
         assert unchanged.size == shared.file_small.size
+
+    def test_multipart_upload(self, api_client, root_dir, monkeypatch):
+        # Reduce the part size so the test doesn't need to upload 10 MB.
+        # The threshold equals the part size, so patching one patches both.
+        monkeypatch.setattr(
+            file_module,
+            "MULTIPART_UPLOAD_PART_SIZE",
+            file_module.MIN_INSTANT_UPLOAD_SIZE,
+        )
+        # File is a little larger than one part, producing two-part upload.
+        # It also exceeds MIN_INSTANT_UPLOAD_SIZE so instant upload is attempted
+        # first and falls back to multipart when the server doesn't have the file.
+        size = file_module.MIN_INSTANT_UPLOAD_SIZE + 10 * 1024
+        fname = f"f_{uuid.uuid4().hex[:8]}.bin"
+        content = os.urandom(size)
+        local = create_temp_file(content, name=fname)
+        sha1 = hashlib.sha1(content).hexdigest().upper()
+        try:
+            entry = api_client.file.upload(f"{root_dir.path}/{fname}", local)
+        finally:
+            os.unlink(local)
+            os.rmdir(os.path.dirname(local))
+        assert isinstance(entry, File)
+        assert entry.size == size
+        assert entry.sha1 == sha1
 
 
 class TestInstantUpload:

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import base64
+from email.utils import formatdate
 import hashlib
+import hmac
 import json
 import os
 from typing import BinaryIO
+from urllib.parse import urlsplit, urlunsplit
+import xml.etree.ElementTree as ET
 
 import httpcore
+import httpx
 from p115cipher import ecdh_aes_decrypt, make_upload_payload
 
 from cli115.client.base import (
@@ -36,6 +42,9 @@ from .base import (
     DEFAULT_USER_AGENT,
     Endpoint,
 )
+
+# 16 MB per chunk; also used as the threshold for switching to multipart upload
+MULTIPART_UPLOAD_PART_SIZE = 16 * 1024 * 1024
 
 
 class FileClient(BaseFileClient, BaseClient):
@@ -267,6 +276,9 @@ class FileClient(BaseFileClient, BaseClient):
         status.set_message(f"file sha1 calculated: {sha1}, size: {file_size} bytes")
 
         # Only attempt instant upload when the file meets the minimum size.
+        # The initupload.php response (status=1) is preserved so a subsequent
+        # multipart upload can reuse the bucket/object/callback metadata.
+        init_data: dict | None = None
         if file_size >= MIN_INSTANT_UPLOAD_SIZE:
             status.set_message("attempting instant upload")
             force_instant = instant_only is not None and file_size >= instant_only
@@ -284,14 +296,24 @@ class FileClient(BaseFileClient, BaseClient):
                 status.instant_upload_error = exc
                 if force_instant:
                     raise
+                if isinstance(exc, InstantUploadNotAvailableError):
+                    init_data = exc.response_data
             file.seek(0)
 
         if isinstance(file, RemoteFile):
-            file.set_stream(True)  # use streaming upload for RemoteFile
+            file.set_stream(True)
 
         status.is_instant_uploaded = False
         with status.start_upload(file_size) as progress, progress.patch_file(file):
-            resp = self._upload_file_sample(file, pid=dir_id, filename=filename)
+            if init_data is None:
+                resp = self._upload_file_sample(file, pid=dir_id, filename=filename)
+            else:
+                resp = self._do_multipart_upload(
+                    file,
+                    bucket=init_data["bucket"],
+                    object=init_data["object"],
+                    callback=init_data["callback"],
+                )
         data = resp["data"]
 
         status.set_message("upload completed")
@@ -355,7 +377,8 @@ class FileClient(BaseFileClient, BaseClient):
 
         if status != 2:
             raise InstantUploadNotAvailableError(
-                "instant upload is not available (file not found on server)"
+                "instant upload is not available (file not found on server)",
+                response_data=resp,
             )
 
     def _post_upload_init(self, payload: dict) -> dict:
@@ -407,6 +430,172 @@ class FileClient(BaseFileClient, BaseClient):
         data = json.loads(body)
         data["oss_info"] = sample_info
         return data
+
+    def _do_multipart_upload(
+        self, file: BinaryIO, *, bucket: str, object: str, callback: str
+    ) -> dict:
+        """Upload a file using the OSS multipart protocol."""
+        url = f"https://{bucket}.oss-cn-shenzhen.aliyuncs.com/{object}"
+        token = self._get_oss_token()
+        upload_id = self._oss_multipart_upload_init(url, token)
+
+        parts: list[dict] = []
+        part_number = 1
+        with httpcore.ConnectionPool() as pool:
+            while True:
+                # Read a small peek to detect EOF without buffering a full part.
+                peek = file.read(256 * 1024)
+                if not peek:
+                    break
+
+                # part_size is a one-element list so the generator below can
+                # accumulate the total and the caller can read it afterwards.
+                part_size = [0]
+
+                def _iter_part_content(first_chunk=peek):
+                    remaining = MULTIPART_UPLOAD_PART_SIZE - len(first_chunk)
+                    part_size[0] += len(first_chunk)
+                    yield first_chunk
+                    while remaining > 0:
+                        buf = file.read(min(256 * 1024, remaining))
+                        if not buf:
+                            break
+                        part_size[0] += len(buf)
+                        remaining -= len(buf)
+                        yield buf
+
+                part = self._oss_upload_part(
+                    url, upload_id, part_number, _iter_part_content(), token, pool
+                )
+                part["Size"] = part_size[0]
+                parts.append(part)
+                part_number += 1
+
+        return self._oss_multipart_upload_complete(
+            url, upload_id, callback, parts, token
+        )
+
+    def _get_oss_token(self) -> dict:
+        """Fetch a short-lived STS token from 115 for signing OSS requests."""
+        return self._api.get(Endpoint.UPLB + "/3.0/gettoken.php").json()
+
+    def _oss_multipart_upload_init(self, url: str, token: dict) -> str:
+        """Initiate an OSS multipart upload session and return the upload_id."""
+        init_url = f"{url}?sequential=1&uploads=1"
+        headers = self._oss_sign(init_url, "POST", token)
+        resp = httpx.post(init_url, headers=headers)
+        resp.raise_for_status()
+        upload_id = ET.fromstring(resp.content).findtext("UploadId")
+        if not upload_id:
+            raise RuntimeError(f"UploadId not found in OSS response: {resp.content!r}")
+        return upload_id
+
+    def _oss_upload_part(
+        self,
+        url: str,
+        upload_id: str,
+        part_number: int,
+        content,
+        token: dict,
+        pool: httpcore.ConnectionPool,
+    ) -> dict:
+        """Upload one part and return its part metadata dict."""
+        part_url = f"{url}?partNumber={part_number}&uploadId={upload_id}"
+        headers = self._oss_sign(part_url, "PUT", token)
+        # h11 requires Transfer-Encoding: chunked when no Content-Length is known
+        headers["transfer-encoding"] = "chunked"
+        request = httpcore.Request("PUT", part_url, headers=headers, content=content)
+        response = pool.handle_request(request)
+        try:
+            body = response.read()
+        finally:
+            response.close()
+        if response.status >= 400:
+            raise OSError(
+                f"part {part_number} upload failed: "
+                f"status={response.status}, body={body!r}"
+            )
+        headers_lower = {k.lower(): v for k, v in response.headers}
+        etag = headers_lower.get(b"etag", b"").decode()
+        return {"PartNumber": part_number, "ETag": etag}
+
+    def _oss_multipart_upload_complete(
+        self,
+        url: str,
+        upload_id: str,
+        callback: dict,
+        parts: list[dict],
+        token: dict,
+    ) -> dict:
+        """Finalize the multipart upload and trigger the 115 server callback."""
+        complete_url = f"{url}?uploadId={upload_id}"
+        xml_body = (
+            b"<CompleteMultipartUpload>"
+            + b"".join(
+                (
+                    f"<Part><PartNumber>{p['PartNumber']}</PartNumber>"
+                    f"<ETag>{p['ETag']}</ETag></Part>"
+                ).encode()
+                for p in parts
+            )
+            + b"</CompleteMultipartUpload>"
+        )
+        extra_headers = {
+            "x-oss-callback": base64.b64encode(callback["callback"].encode()).decode(),
+            "x-oss-callback-var": base64.b64encode(
+                callback["callback_var"].encode()
+            ).decode(),
+            "content-type": "text/xml",
+        }
+        headers = self._oss_sign(complete_url, "POST", token, extra_headers)
+        resp = httpx.post(complete_url, headers=headers, content=xml_body)
+        resp.raise_for_status()
+        return json.loads(resp.content)
+
+    def _oss_sign(
+        self,
+        url: str,
+        method: str,
+        token: dict,
+        extra_headers: dict | None = None,
+    ) -> dict:
+        """Build an OSS v1 (HMAC-SHA1) signed headers dict for the given request."""
+        headers: dict[str, str] = {}
+        if extra_headers:
+            headers.update(extra_headers)
+        headers["x-oss-security-token"] = token["SecurityToken"]
+        headers.setdefault("content-md5", "")
+        headers.setdefault("content-type", "")
+        date = headers["date"] = formatdate(usegmt=True)
+
+        urlp = urlsplit(url)
+        bucket = urlp.hostname.partition(".")[0]
+        headers["host"] = urlp.netloc
+        headers["referer"] = "https://115.com/"
+        headers["user-agent"] = self._api.headers.get("User-Agent", DEFAULT_USER_AGENT)
+        oss_header_lines = "\n".join(
+            f"{k}:{v}" for k, v in sorted(headers.items()) if k.startswith("x-oss-")
+        )
+        canonical_resource = (
+            f"/{bucket}{urlunsplit(urlp._replace(scheme='', netloc=''))}"
+        )
+        string_to_sign = (
+            f"{method.upper()}\n"
+            f"{headers['content-md5']}\n"
+            f"{headers['content-type']}\n"
+            f"{date}\n"
+            f"{oss_header_lines}\n"
+            f"{canonical_resource}"
+        )
+        signature = base64.b64encode(
+            hmac.digest(
+                token["AccessKeySecret"].encode(),
+                string_to_sign.encode(),
+                "sha1",
+            )
+        ).decode()
+        headers["authorization"] = f"OSS {token['AccessKeyId']}:{signature}"
+        return headers
 
     def url(self, path: str | File, *, user_agent: str | None = None) -> DownloadUrl:
         entry = self._resolve_entry(path)

@@ -20,7 +20,17 @@ class APIError(Exception):
 
 class InstantUploadNotAvailableError(Exception):
     """Raised when instant upload is requested but the file is not available
-    on the server (i.e. the file has never been uploaded before)."""
+    on the server (i.e. the file has never been uploaded before).
+
+    Attributes:
+        response_data: The decoded initupload.php response dict (status=1),
+            containing ``bucket``, ``object`` and ``callback`` fields that
+            callers can use to perform a regular or multipart upload.
+    """
+
+    def __init__(self, message: str = "", *, response_data: dict | None = None):
+        self.response_data = response_data
+        super().__init__(message)
 
 
 class WAFBlockedError(Exception):
