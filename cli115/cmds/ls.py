@@ -7,6 +7,7 @@ import sys
 
 from cli115.client import Directory, File, SortField, SortOrder
 from cli115.cmds.base import PaginationCommand
+from cli115.exceptions import CommandLineError
 from cli115.helpers import format_size
 
 
@@ -38,7 +39,13 @@ class LsCommand(PaginationCommand):
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
         parser.add_argument(
-            "path", nargs="?", default="/", help="Directory path (default: /)"
+            "path", nargs="?", default=None, help="Directory path (default: /)"
+        )
+        parser.add_argument(
+            "--id",
+            dest="dir_id",
+            default=None,
+            help="List directory by ID instead of path",
         )
         parser.add_argument(
             "-l", "--long", action="store_true", help="Show detailed info"
@@ -54,12 +61,24 @@ class LsCommand(PaginationCommand):
         )
 
     def execute(self, args: argparse.Namespace) -> None:
+        if args.dir_id and args.path:
+            raise CommandLineError("use either 'path' or '--id', not both")
+
         sort_field = _SORT_CHOICES[args.sort]
         sort_order = SortOrder.DESC if args.desc else SortOrder.ASC
 
         client = self._create_client()
+
+        if args.dir_id:
+            entry = client.file.id(args.dir_id)
+            if not entry.is_directory:
+                raise CommandLineError(f"not a directory: {args.dir_id}")
+            target = entry
+        else:
+            target = args.path or "/"
+
         collection = client.file.list(
-            args.path,
+            target,
             sort=sort_field,
             sort_order=sort_order,
         )

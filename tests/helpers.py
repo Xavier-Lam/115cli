@@ -1,5 +1,7 @@
+from cli115.cli import build_parser, load_config
 from cli115.client.lazy import LazyCollection
 from cli115.client.models import Pagination
+from cli115.credentials import CredentialManager
 
 
 def make_lazy(items, total=None):
@@ -19,3 +21,9 @@ def make_lazy(items, total=None):
     else:
         col._pagination = Pagination(total=total, offset=0, limit=page_size)
     return col
+
+
+def make_parser():
+    cfg = load_config()
+    cm = CredentialManager(cfg)
+    return build_parser(cfg, cm)

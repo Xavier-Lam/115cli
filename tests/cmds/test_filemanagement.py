@@ -28,13 +28,7 @@ from cli115.cmds.url import UrlCommand
 from cli115.credentials import CredentialManager
 from cli115.exceptions import CommandLineError
 from cli115.uploader import UploadEntry
-from tests.helpers import make_lazy
-
-
-def _build_parser():
-    cfg = load_config()
-    cm = CredentialManager(cfg)
-    return build_parser(cfg, cm)
+from tests.helpers import make_lazy, make_parser
 
 
 def _make_dir(name="testdir", id="100", parent_id="0", file_count=5):
@@ -94,7 +88,7 @@ class TestCpCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["cp", "/src/file.txt", "/dst"])
         cmds["cp"].execute(args)
 
@@ -106,7 +100,7 @@ class TestCpCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["cp", "/a", "/b", "/dst"])
         cmds["cp"].execute(args)
 
@@ -126,7 +120,7 @@ class TestFetchCommand:
     def test_fetch_saves_file(self, mock_create, capsys):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["fetch", "/remote/remote.bin", "--silent"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -145,7 +139,7 @@ class TestFetchCommand:
     def test_fetch_output_path_explicit(self, mock_create):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = os.path.join(tmpdir, "custom.bin")
             args = parser.parse_args(
@@ -158,7 +152,7 @@ class TestFetchCommand:
     def test_fetch_output_to_directory_uses_remote_name(self, mock_create):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         with tempfile.TemporaryDirectory() as tmpdir:
             args = parser.parse_args(
                 ["fetch", "/remote/remote.bin", "-o", tmpdir, "--silent"]
@@ -173,7 +167,7 @@ class TestFetchCommand:
         mock_create.return_value = self._make_client_mock(file=file)
         mock_sha1.return_value = (file.sha1, file.size)
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["fetch", "/remote/remote.bin", "--check-integrity", "--silent"]
         )
@@ -216,7 +210,7 @@ class TestFetchCommand:
         mock_client.file.open.return_value = _make_remote_file_mock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["fetch", "--id", "200", "--silent"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -236,7 +230,7 @@ class TestFetchCommand:
         file = _make_file(name="remote.bin", size=1024)
         mock_create.return_value = self._make_client_mock(file=file)
         mock_sha1.return_value = (file.sha1, 512)
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["fetch", "/remote/remote.bin", "--check-integrity", "--silent"]
         )
@@ -270,7 +264,7 @@ class TestFetchCommand:
         mock_client.file.stat.return_value = file
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["fetch", "/remote/remote.bin", "--dry-run", "--silent"]
         )
@@ -295,7 +289,7 @@ class TestFetchCommand:
         mock_client.file.stat.return_value = directory
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             [
                 "fetch",
@@ -354,7 +348,7 @@ class TestFetchCommand:
         ]
 
         mock_fetch.return_value = None
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
 
         for remote_entry, dest, use_T, expected in cases:
             mock_client = MagicMock()
@@ -383,7 +377,7 @@ class TestFindCommand:
     def test_find_global_search(self, mock_create, capsys):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["find", "--format", "json", "test"])
         cmds["find"].execute(args)
 
@@ -403,7 +397,7 @@ class TestFindCommand:
     def test_find_with_path(self, mock_create):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["find", "/docs", "keyword"])
         cmds["find"].execute(args)
 
@@ -419,7 +413,7 @@ class TestIdCommand:
         mock_client.file.id.return_value = _make_file()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["id", "--format", "json", "200"])
         cmds["id"].execute(args)
 
@@ -436,7 +430,7 @@ class TestIdCommand:
         mock_client.file.id.return_value = _make_dir()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["id", "--format", "json", "100"])
         cmds["id"].execute(args)
 
@@ -459,7 +453,7 @@ class TestLsCommand:
     def test_ls(self, mock_create, capsys):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["ls", "/"])
         cmds["ls"].execute(args)
 
@@ -482,7 +476,7 @@ class TestLsCommand:
     def test_ls_sort(self, mock_create):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["ls", "--sort", "size", "--desc", "/"])
         cmds["ls"].execute(args)
 
@@ -500,12 +494,54 @@ class TestLsCommand:
     def test_ls_sort_opened(self, mock_create):
         mock_create.return_value = self._make_client_mock()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["ls", "--sort", "opened", "/"])
         cmds["ls"].execute(args)
 
         call_kwargs = mock_create.return_value.file.list.call_args.kwargs
         assert call_kwargs["sort"] == SortField.OPEN_TIME
+
+    @patch.object(LsCommand, "_create_client")
+    def test_ls_by_id(self, mock_create, capsys):
+        directory = _make_dir(id="42")
+        mock_client = self._make_client_mock()
+        mock_client.file.id.return_value = directory
+        mock_create.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(["ls", "--id", "42"])
+        cmds["ls"].execute(args)
+
+        mock_client.file.id.assert_called_once_with("42")
+        mock_client.file.list.assert_called_once_with(
+            directory,
+            sort=SortField.FILENAME,
+            sort_order=mock_client.file.list.call_args.kwargs["sort_order"],
+        )
+        output = capsys.readouterr().out
+        assert "testdir/" in output
+        assert "test.txt" in output
+
+    @patch.object(LsCommand, "_create_client")
+    def test_ls_id_and_path_raises(self, mock_create):
+        mock_create.return_value = self._make_client_mock()
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(["ls", "--id", "42", "/some/path"])
+        with pytest.raises(CommandLineError):
+            cmds["ls"].execute(args)
+
+    @patch.object(LsCommand, "_create_client")
+    def test_ls_id_not_a_directory_raises(self, mock_create):
+        file_entry = _make_file(id="99")
+        mock_client = self._make_client_mock()
+        mock_client.file.id.return_value = file_entry
+        mock_create.return_value = mock_client
+
+        parser, cmds = make_parser()
+        args = parser.parse_args(["ls", "--id", "99"])
+        with pytest.raises(CommandLineError):
+            cmds["ls"].execute(args)
 
 
 class TestMkdirCommand:
@@ -517,7 +553,7 @@ class TestMkdirCommand:
         )
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["mkdir", "--format", "json", "/newdir"])
         cmds["mkdir"].execute(args)
 
@@ -542,7 +578,7 @@ class TestMvCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["mv", "/src/file.txt", "/dst"])
         cmds["mv"].execute(args)
 
@@ -553,7 +589,7 @@ class TestMvCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["mv", "/a", "/b", "/dst"])
         cmds["mv"].execute(args)
 
@@ -566,7 +602,7 @@ class TestRenameCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["rename", "/src/file.txt", "new-file.txt"])
         cmds["rename"].execute(args)
 
@@ -580,7 +616,7 @@ class TestRmCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["rm", "/file.txt"])
         cmds["rm"].execute(args)
 
@@ -591,7 +627,7 @@ class TestRmCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["rm", "-r", "/dir"])
         cmds["rm"].execute(args)
 
@@ -602,7 +638,7 @@ class TestRmCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["rm", "/a", "/b"])
         cmds["rm"].execute(args)
 
@@ -618,7 +654,7 @@ class TestStatCommand:
         mock_client.file.stat.return_value = _make_file()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["stat", "--format", "json", "/test.txt"])
         cmds["stat"].execute(args)
 
@@ -635,7 +671,7 @@ class TestStatCommand:
         mock_client.file.stat.return_value = _make_dir()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["stat", "--format", "json", "/testdir"])
         cmds["stat"].execute(args)
 
@@ -654,7 +690,7 @@ class TestUploadCommand:
         mock_create.return_value = mock_client
         mock_upload.return_value = _make_file(name="uploaded.txt")
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["upload", "--format", "json", "/local/file.txt", "/remote/file.txt"]
         )
@@ -675,7 +711,7 @@ class TestUploadCommand:
         mock_create.return_value = MagicMock()
         mock_upload.return_value = _make_file(name="uploaded.txt", size=2048)
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["upload", "-s", "--format", "json", "/local/file.txt", "/remote/file.txt"]
         )
@@ -693,7 +729,7 @@ class TestUploadCommand:
         mock_create.return_value = MagicMock()
         mock_upload.return_value = _make_file()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             [
                 "upload",
@@ -714,7 +750,7 @@ class TestUploadCommand:
         mock_create.return_value = MagicMock()
         mock_upload.return_value = _make_file()
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             [
                 "upload",
@@ -742,7 +778,7 @@ class TestUploadCommand:
             "cannot upload directory to a file path"
         )
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["upload", "/local/dir", "/remote/file.txt"])
         with pytest.raises(FileExistsError, match="cannot upload directory"):
             cmds["upload"].execute(args)
@@ -754,7 +790,7 @@ class TestUploadCommand:
         mock_create.return_value = mock_client
         mock_uploader_cls.return_value.upload.return_value = None
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["upload", "--dry-run", "/local/file.txt", "/remote/file.txt"]
         )
@@ -772,7 +808,7 @@ class TestUploadCommand:
         mock_client.file.upload.return_value = None
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["upload", "--plan", str(local_file), "/remote/file.txt"]
         )
@@ -791,7 +827,7 @@ class TestUploadCommand:
         mock_client.file.stat.side_effect = FileNotFoundError("not found")
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["upload", "--dry-run", str(local_file), "/remote/file.txt"]
         )
@@ -817,7 +853,7 @@ class TestUploadCommand:
         failed_b.error = ValueError("checksum mismatch")
         mock_uploader.entries = [failed_a, failed_b]
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["upload", "-s", "/local/dir", "/remote/dir"])
         cmds["upload"].execute(args)
 

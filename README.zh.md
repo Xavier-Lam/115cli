@@ -32,6 +32,7 @@ pip install 115cli
 # 目录
 115cli ls /
 115cli ls /path/to/dir -l
+115cli ls --id 1234567
 # 创建时间倒叙
 115cli ls -l --sort created --desc
 
@@ -46,6 +47,7 @@ pip install 115cli
 
 # 查看文件信息和获取下载地址
 115cli stat /path/to/file
+115cli id 1234567
 115cli url /path/to/file
 115cli url --format aria2c /path/to/file
 

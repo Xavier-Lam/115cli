@@ -32,6 +32,7 @@ After [authenticating](#authentication) with `115cli login`, you can use the `11
 # List files
 115cli ls /
 115cli ls /path/to/dir -l
+115cli ls --id 1234567
 # Sort by creation time, newest first
 115cli ls -l --sort created --desc
 
@@ -46,6 +47,7 @@ After [authenticating](#authentication) with `115cli login`, you can use the `11
 
 # File info and download
 115cli stat /path/to/file
+115cli id 1234567
 115cli url /path/to/file
 115cli url --format aria2c /path/to/file
 
