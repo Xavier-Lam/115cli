@@ -78,6 +78,14 @@ pip install 115cli
 115cli download status <info_hash>
 115cli download retry <info_hash>
 115cli download clear --filter failed
+
+# 文件分享
+115cli share info https://115.com/s/1234567 -p 6666
+115cli share list https://115.com/s/1234567?password=6666
+115cli share list https://115.com/s/1234567?password=6666 /dir/
+115cli share stat https://115.com/s/1234567?password=6666 /path/to/file.txt
+115cli share save https://115.com/s/1234567?password=6666 --dest /my/dir/
+115cli share save https://115.com/s/1234567?password=6666 /path/in/share/ --dest /my/dir/ --include *.mp4 --include *.mkv --exclude *.txt
 ```
 
 > 注意: 某些创建云下载任务的操作可能会触发图形验证码, 目前客户端不支持处理验证码.

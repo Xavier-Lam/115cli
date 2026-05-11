@@ -123,6 +123,16 @@ class File(FileSystemEntry):
         return False
 
 
+@dataclass
+class ShareDirectory(Directory):
+    """A directory entry from a shared link."""
+
+
+@dataclass
+class ShareFile(File):
+    """A file entry from a shared link."""
+
+
 # endregion
 # region Data Models
 
@@ -207,6 +217,41 @@ class DownloadQuota:
 
     quota: int
     total: int
+
+
+@dataclass(frozen=True)
+class ShareInfo:
+    """Basic information of a shared link.
+
+    Attributes:
+        share_code: Share code extracted from the link.
+        share_id: Share snapshot ID.
+        title: Share title shown by the API.
+        owner_id: User ID of the share owner.
+        owner_name: Display name of the share owner.
+        has_password: Whether the share requires a receive code.
+        receive_code: Receive code used for this share (if available).
+        receive_count: Number of times the share has been received.
+        item_count: Number of items in the share root.
+        total_size: Total size (bytes) of the shared content.
+        created_time: Share creation time.
+        expire_time: Share expiration time, ``None`` if non-expiring.
+        is_available: Whether the share is still available.
+    """
+
+    share_code: str
+    share_id: str
+    title: str
+    owner_id: str
+    owner_name: str
+    has_password: bool
+    receive_code: str
+    receive_count: int
+    item_count: int
+    total_size: int
+    created_time: datetime | None
+    expire_time: datetime | None
+    is_available: bool
 
 
 @dataclass(frozen=True)

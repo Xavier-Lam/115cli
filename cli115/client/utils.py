@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from cli115.client.models import Directory, File
+from cli115.client.models import Directory, File, ShareDirectory, ShareFile
 
 
 def parse_ts(value) -> datetime | None:
@@ -35,7 +35,7 @@ def parse_labels(fl) -> list[str]:
     return names
 
 
-def parse_item(item: dict) -> Directory | File:
+def parse_item(item: dict, share: bool = False) -> Directory | File:
     kwargs = {
         "id": str(item["fid"]) if "fid" in item else str(item["cid"]),
         "parent_id": str(item.get("cid" if "fid" in item else "pid", "")),
@@ -56,12 +56,12 @@ def parse_item(item: dict) -> Directory | File:
                 "starred": bool(item.get("sta")),
             }
         )
-        klass = File
+        klass = ShareFile if share else File
     else:
         kwargs.update(
             {
                 "file_count": int(item.get("fc", 0)),
             }
         )
-        klass = Directory
+        klass = ShareDirectory if share else Directory
     return klass(**kwargs)

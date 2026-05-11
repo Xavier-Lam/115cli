@@ -17,6 +17,9 @@ from cli115.client.models import (
     File,
     FileSystemEntry,
     Pagination,
+    ShareDirectory,
+    ShareFile,
+    ShareInfo,
     SortField,
     SortOrder,
     TaskFilter,
@@ -38,10 +41,12 @@ class Client(ABC):
         account: AccountClient,
         file: FileClient,
         download: DownloadClient,
+        share: ShareClient,
     ):
         self._account = account
         self._file = file
         self._download = download
+        self._share = share
 
     @property
     def account(self) -> AccountClient:
@@ -57,6 +62,11 @@ class Client(ABC):
     def download(self) -> DownloadClient:
         """Access cloud download (offline) operations."""
         return self._download
+
+    @property
+    def share(self) -> ShareClient:
+        """Access share-link operations."""
+        return self._share
 
 
 class AccountClient(ABC):
@@ -356,7 +366,8 @@ class FileClient(ABC):
 
         Raises:
             FileNotFoundError: If the path does not exist.
-            FileExistsError: If ``recursive`` is ``False`` and the directory is not empty.
+            FileExistsError: If ``recursive`` is ``False`` and the directory
+                is not empty.
         """
 
     @abstractmethod
@@ -585,6 +596,102 @@ class FileClient(ABC):
         """
         info = self.url(path, user_agent=user_agent)
         return RemoteFile(info)
+
+
+class ShareClient(ABC):
+    """Abstract interface for public share operations."""
+
+    @abstractmethod
+    def info(self, share_code: str, password: str | None = None) -> ShareInfo:
+        """Get basic metadata for a share.
+
+        Args:
+            share_code: Share code.
+            password: Optional receive code.
+
+        Returns:
+            A :class:`ShareInfo` describing the share.
+        """
+
+    def list(
+        self,
+        share_code: str,
+        password: str | None = None,
+        path: str | ShareDirectory = "/",
+    ) -> Sequence[ShareDirectory | ShareFile]:
+        """Return a lazy collection of entries under a shared path.
+
+        Warning: Avoid fully loading all items if you don't know the total
+        number of items, as this will trigger many API requests.
+        """
+
+        def fetch(
+            page: int, page_size: int
+        ) -> tuple[list[ShareDirectory | ShareFile], Pagination]:
+            return self._list(
+                share_code,
+                password=password,
+                path=path,
+                limit=page_size,
+                offset=(page - 1) * page_size,
+            )
+
+        return LazyCollection(fetch, page_size=100)
+
+    @abstractmethod
+    def _list(
+        self,
+        share_code: str,
+        password: str | None = None,
+        path: str | ShareDirectory = "/",
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ShareDirectory | ShareFile], Pagination]:
+        """List files and directories under a shared path.
+
+        Args:
+            share_code: Share code.
+            password: Optional receive code.
+            path: Directory path or :class:`ShareDirectory` object.
+            limit: Maximum number of items to return.
+            offset: Pagination offset.
+
+        Returns:
+            A tuple of (items, pagination).
+        """
+
+    @abstractmethod
+    def stat(
+        self,
+        share_code: str,
+        path: str,
+        password: str | None = None,
+    ) -> ShareDirectory | ShareFile:
+        """Get info for a shared file or directory at the given path."""
+
+    @abstractmethod
+    def save(
+        self,
+        share_code: str,
+        file_ids: Sequence[str],
+        *,
+        password: str | None = None,
+        dest_dir: str | Directory | None = None,
+    ) -> dict:
+        """Save selected shared entries to the user's account.
+
+        Args:
+            share_code: Share code.
+            file_ids: IDs of shared entries to save.
+            password: Optional receive code.
+            dest_dir: Destination directory path or :class:`Directory` in the
+                user's account. If ``None``, the server decides where to save.
+
+        Returns:
+            Response data from the server, including ``pid`` (the folder ID
+            where the entries were saved).
+        """
 
 
 class RemoteFile:
