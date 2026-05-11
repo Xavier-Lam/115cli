@@ -294,12 +294,15 @@ class TestShareSaveCommand:
         )
 
     @patch.object(ShareSaveCommand, "_create_client")
-    def test_save_single_file(self, mock_create_client):
+    def test_save_single_file(self, mock_create_client, capsys):
         mock_client = MagicMock()
         mock_client.share.stat.return_value = _make_file(
             name="guide.txt",
             file_id="201",
         )
+        saved_dir = _make_dir(name="downloads")
+        mock_client.share.save.return_value = {"pid": saved_dir.id}
+        mock_client.file.id.return_value = saved_dir
         mock_create_client.return_value = mock_client
 
         parser, cmds = make_parser()
@@ -318,8 +321,10 @@ class TestShareSaveCommand:
             "swzadyu3zs9",
             ["201"],
             password="azhy",
-            dest_dir="/",
+            dest_dir=None,
         )
+        mock_client.file.id.assert_called_once_with(saved_dir.id)
+        assert "Saved 1 item(s) to /downloads" in capsys.readouterr().out
 
     @patch.object(ShareSaveCommand, "_create_client")
     def test_save_no_match(self, mock_create_client, capsys):

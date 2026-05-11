@@ -129,8 +129,8 @@ class ShareSaveCommand(BaseShareCommand):
         )
         parser.add_argument(
             "--dest",
-            default="/",
-            help="Destination folder path in your account (default: /)",
+            default=None,
+            help="Destination folder path in your account (server decides if omitted)",
         )
         parser.add_argument(
             "--include",
@@ -178,13 +178,22 @@ class ShareSaveCommand(BaseShareCommand):
             print("No entries matched include/exclude patterns")
             return
 
-        client.share.save(
+        data = client.share.save(
             share_code,
             [entry.id for entry in selected],
             password=password,
             dest_dir=args.dest,
         )
-        print(f"Saved {len(selected)} item(s) to {args.dest}")
+        if args.dest is None:
+            pid = data.get("pid")
+            if pid is not None:
+                dest_entry = client.file.id(str(pid))
+                dest_path = dest_entry.path or str(pid)
+            else:
+                dest_path = "(unknown)"
+            print(f"Saved {len(selected)} item(s) to {dest_path}")
+        else:
+            print(f"Saved {len(selected)} item(s) to {args.dest}")
 
 
 class ShareCommand(MultiCommand):

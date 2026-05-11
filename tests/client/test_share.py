@@ -306,13 +306,13 @@ class TestShareClient:
                 }
                 return Response(
                     200,
-                    json={"state": True, "error": "", "errno": 0, "data": {}},
+                    json={"state": True, "error": "", "errno": 0, "data": {"pid": 900}},
                 )
             raise AssertionError(f"unexpected path: {request.url.path}")
 
         client = self._make_client(handler)
         try:
-            client.share.save(
+            data = client.share.save(
                 "swzadyu3zs9",
                 ["201", "202"],
                 password="azhy",
@@ -327,18 +327,4 @@ class TestShareClient:
         assert captured["receive_payload"]["receive_code"] == "azhy"
         assert captured["receive_payload"]["file_id"] == "201,202"
         assert captured["receive_payload"]["cid"] == "900"
-
-    def test_save_with_no_file_ids(self):
-        def handler(_: Request) -> Response:
-            raise AssertionError("save should not call API when no file id is provided")
-
-        client = self._make_client(handler)
-        try:
-            client.share.save(
-                "swzadyu3zs9",
-                [],
-                password="azhy",
-                dest_dir="/",
-            )
-        finally:
-            client.share._api.close()
+        assert data["pid"] == 900

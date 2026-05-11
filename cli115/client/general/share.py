@@ -72,24 +72,22 @@ class ShareClient(BaseShareClient, BaseClient):
         file_ids: Sequence[str],
         *,
         password: str | None = None,
-        dest_dir: str | Directory = "/",
-    ) -> None:
+        dest_dir: str | Directory | None = None,
+    ) -> dict:
         ids = [str(file_id) for file_id in file_ids if str(file_id)]
         if not ids:
-            return
+            raise ValueError("no valid file IDs provided")
 
         receive_code = (password or "").strip()
         payload = self._base_params(share_code, receive_code)
-        payload.update(
-            {
-                "file_id": ",".join(ids),
-                "cid": self._resolve_dir_id(dest_dir),
-            }
-        )
-        self._api.post(
+        payload["file_id"] = ",".join(ids)
+        if dest_dir is not None:
+            payload["cid"] = self._resolve_dir_id(dest_dir)
+        resp = self._api.post(
             Endpoint.WEBAPI + "/share/receive",
             data=payload,
         )
+        return resp.json()["data"]
 
     def _list(
         self,

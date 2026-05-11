@@ -677,8 +677,8 @@ class ShareClient(ABC):
         file_ids: Sequence[str],
         *,
         password: str | None = None,
-        dest_dir: str | Directory = "/",
-    ) -> None:
+        dest_dir: str | Directory | None = None,
+    ) -> dict:
         """Save selected shared entries to the user's account.
 
         Args:
@@ -686,7 +686,11 @@ class ShareClient(ABC):
             file_ids: IDs of shared entries to save.
             password: Optional receive code.
             dest_dir: Destination directory path or :class:`Directory` in the
-                user's account.
+                user's account. If ``None``, the server decides where to save.
+
+        Returns:
+            Response data from the server, including ``pid`` (the folder ID
+            where the entries were saved).
         """
 
 
