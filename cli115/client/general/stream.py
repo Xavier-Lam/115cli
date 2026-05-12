@@ -4,10 +4,19 @@ import m3u8
 
 from cli115.client.base import StreamClient as BaseStreamClient
 from cli115.client.models import File
-from .base import BaseClient
+from .base import BaseClient, Endpoint
 
 
 class StreamClient(BaseStreamClient, BaseClient):
+
+    def info(self, pickcode: str | File, /) -> dict:
+        if isinstance(pickcode, File):
+            pickcode = pickcode.pickcode
+        resp = self._api.get(
+            Endpoint.WEBAPI + "/files/video",
+            params={"pickcode": pickcode},
+        )
+        return resp.json()
 
     def get_m3u8(self, pickcode: str | File, /) -> m3u8.M3U8:
         if isinstance(pickcode, File):

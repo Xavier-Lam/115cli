@@ -64,6 +64,17 @@ class StreamCommand(BaseCommand):
         port = args.port
         base_url = f"http://{host}:{port}"
 
+        video_info = client.stream.info(entry.pickcode)
+        if "video_url" not in video_info:
+            if "queue_url" in video_info:
+                raise CommandLineError(
+                    "video is still being processed by the server, "
+                    "please try again later"
+                )
+            raise CommandLineError(
+                "video stream is not available, check if the file is a valid video"
+            )
+
         master = client.stream.get_m3u8(entry.pickcode)
         if not master.is_variant:
             raise NotImplementedError("non-variant playlists are not supported")

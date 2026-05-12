@@ -9,7 +9,7 @@ from wsgiref.simple_server import make_server
 import m3u8
 import pytest
 
-from cli115.client.models import Directory, File
+from cli115.client.models import File
 from cli115.cmds.stream import _QuietWSGIRequestHandler, _ThreadingWSGIServer, StreamApp
 from tests.helpers import make_parser
 
@@ -19,16 +19,6 @@ _MASTER_M3U8_VARIANT = (
     "https://stream.115.com/hls/abc/HD/index.m3u8?token=t1\n"
     "#EXT-X-STREAM-INF:BANDWIDTH=600000,RESOLUTION=854x480\n"
     "https://stream.115.com/hls/abc/SD/index.m3u8?token=t1\n"
-)
-
-_MASTER_M3U8_SINGLE = (
-    "#EXTM3U\n"
-    "#EXT-X-TARGETDURATION:10\n"
-    "#EXTINF:9.009,\n"
-    "https://ts.115.com/seg1.ts\n"
-    "#EXTINF:9.009,\n"
-    "https://ts.115.com/seg2.ts\n"
-    "#EXT-X-ENDLIST\n"
 )
 
 _QUALITY_M3U8 = (
@@ -71,19 +61,6 @@ def _make_file(pickcode="abc123"):
         sha1="a" * 40,
         file_type="mp4",
         starred=False,
-    )
-
-
-def _make_dir():
-    return Directory(
-        id="100",
-        parent_id="0",
-        name="myfolder",
-        path="/myfolder",
-        pickcode="",
-        created_time=datetime(2025, 1, 1),
-        modified_time=datetime(2025, 6, 1),
-        open_time=None,
     )
 
 
@@ -174,9 +151,9 @@ class TestStreamCommand:
     def test_variant_stream_prints_urls(self, mock_create, mock_make_server, capsys):
         mock_client = MagicMock()
         mock_client.file.stat.return_value = _make_file("abc123")
-        import m3u8 as m3u8_mod
 
-        mock_client.stream.get_m3u8.return_value = m3u8_mod.loads(_MASTER_M3U8_VARIANT)
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
+        mock_client.stream.get_m3u8.return_value = m3u8.loads(_MASTER_M3U8_VARIANT)
         mock_create.return_value = mock_client
 
         mock_httpd = MagicMock()
@@ -203,6 +180,7 @@ class TestStreamCommand:
         mock_client = MagicMock()
         mock_client.file.id.return_value = _make_file("abc123")
 
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
         mock_client.stream.get_m3u8.return_value = m3u8.loads(_MASTER_M3U8_VARIANT)
         mock_create.return_value = mock_client
 
@@ -224,6 +202,7 @@ class TestStreamCommand:
         mock_client = MagicMock()
         mock_client.file.stat.return_value = _make_file("abc123")
 
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
         mock_client.stream.get_m3u8.return_value = m3u8.loads(_MASTER_M3U8_VARIANT)
         mock_create.return_value = mock_client
 

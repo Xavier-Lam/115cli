@@ -706,6 +706,19 @@ class StreamClient(ABC):
     """Abstract interface for video streaming operations."""
 
     @abstractmethod
+    def info(self, pickcode: str | File, /) -> dict:
+        """Get basic metadata for a video file by pickcode.
+
+        Args:
+            pickcode: The pickcode of the video file, or a File object.
+
+        Returns:
+            A dict containing metadata. If ``video_url`` presents, the video is
+            ready to stream. If ``queue_url`` presents, the video is being
+            processed.
+        """
+
+    @abstractmethod
     def get_m3u8(self, pickcode: str | File, /) -> m3u8.M3U8:
         """Get the master m3u8 playlist for a video by pickcode.
 
