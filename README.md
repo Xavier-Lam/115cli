@@ -86,6 +86,9 @@ After [authenticating](#authentication) with `115cli login`, you can use the `11
 115cli share stat https://115.com/s/1234567?password=6666 /path/to/file.txt
 115cli share save https://115.com/s/1234567?password=6666 --dest /my/dir/
 115cli share save https://115.com/s/1234567?password=6666 /path/in/share/ --dest /my/dir/ --include *.mp4 --include *.mkv --exclude *.txt
+
+# Stream a video file
+115cli stream /path/to/video.mp4
 ```
 
 > **Note:** Creating cloud download tasks may trigger a captcha challenge. This is currently not supported by the client.

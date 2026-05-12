@@ -9,6 +9,7 @@ from .account import AccountClient
 from .download import DownloadClient
 from .file import FileClient
 from .share import ShareClient
+from .stream import StreamClient
 
 __all__ = [
     "Client",
@@ -38,4 +39,5 @@ class Client(BaseClient):
             file=FileClient(api),
             download=DownloadClient(api),
             share=ShareClient(api),
+            stream=StreamClient(api),
         )

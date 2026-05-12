@@ -7,6 +7,7 @@ from os import PathLike
 from typing import BinaryIO, Sequence
 
 import httpx
+import m3u8
 
 from cli115.client.models import (
     AccountInfo,
@@ -42,11 +43,13 @@ class Client(ABC):
         file: FileClient,
         download: DownloadClient,
         share: ShareClient,
+        stream: StreamClient,
     ):
         self._account = account
         self._file = file
         self._download = download
         self._share = share
+        self._stream = stream
 
     @property
     def account(self) -> AccountClient:
@@ -67,6 +70,11 @@ class Client(ABC):
     def share(self) -> ShareClient:
         """Access share-link operations."""
         return self._share
+
+    @property
+    def stream(self) -> StreamClient:
+        """Access video streaming operations."""
+        return self._stream
 
 
 class AccountClient(ABC):
@@ -691,6 +699,80 @@ class ShareClient(ABC):
         Returns:
             Response data from the server, including ``pid`` (the folder ID
             where the entries were saved).
+        """
+
+
+class StreamClient(ABC):
+    """Abstract interface for video streaming operations."""
+
+    @abstractmethod
+    def info(self, pickcode: str | File, /) -> dict:
+        """Get basic metadata for a video file by pickcode.
+
+        Args:
+            pickcode: The pickcode of the video file, or a File object.
+
+        Returns:
+            A dict containing metadata. If ``video_url`` presents, the video is
+            ready to stream. If ``queue_url`` presents, the video is being
+            processed.
+        """
+
+    @abstractmethod
+    def get_m3u8(self, pickcode: str | File, /) -> m3u8.M3U8:
+        """Get the master m3u8 playlist for a video by pickcode.
+
+        Returns:
+            A parsed M3U8 object for the master (or sole) playlist.
+        """
+
+    @abstractmethod
+    def transcode_status(self, video: File, /) -> dict:
+        """Check the transcoding status of a video by its SHA-1 hash.
+
+        Args:
+            video: The File object representing the video.
+
+        Returns:
+            A dict with the following fields:
+
+            - ``result`` (int): 0 on success, non-zero on error.
+            - ``status`` (int): Transcoding status code:
+
+              - ``1``: Queued — waiting to be processed.
+              - ``2``: Completed — transcoding finished successfully.
+              - ``3``: Accelerated — processing with elevated VIP priority.
+              - ``4``: Completed — alternate success code.
+              - ``127``: Failed — transcoding encountered an error.
+
+            - ``count`` (int): Number of tasks ahead of this one in the
+              queue. Drops to ``0`` once the task is accelerated or
+              processing begins.
+            - ``time`` (int): Estimated remaining processing time in
+              seconds. ``0`` when completed.
+            - ``priority`` (int): Processing priority level.
+              ``1`` = standard queue; ``2`` = VIP (accelerated); ``0`` when
+              completed or unknown.
+        """
+
+    @abstractmethod
+    def accelerate_transcode(self, video: File) -> None:
+        """Request accelerated transcoding for a video using VIP priority.
+
+        Moves the video to the front of the transcode queue by applying VIP
+        priority (``vip_push``).  After a successful call the transcoding
+        status transitions to ``status=3`` with ``priority=2``.
+
+        This operation requires the authenticated account to have an active
+        VIP subscription.  Based on the available API, there is no
+        documented per-user quota for VIP acceleration — it is available
+        whenever the account holds VIP status and the video has not already
+        been accelerated (``status != 3``).
+
+        Args:
+            video: The video :class:`~cli115.client.models.File` to
+                accelerate.  The file's ``pickcode`` and ``sha1`` must be
+                populated.
         """
 
 

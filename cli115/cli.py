@@ -29,6 +29,7 @@ from cli115.cmds.rm import RmCommand
 from cli115.cmds.share import ShareCommand
 from cli115.cmds.stat import StatCommand
 from cli115.cmds.upload import UploadCommand
+from cli115.cmds.stream import StreamCommand
 from cli115.cmds.url import UrlCommand
 from cli115.exceptions import APIError, CommandLineError, CredentialError
 
@@ -54,6 +55,7 @@ COMMANDS = OrderedDict(
         ("download", DownloadCommand),
         ("share", ShareCommand),
         ("url", UrlCommand),
+        ("stream", StreamCommand),
     ]
 )
 
