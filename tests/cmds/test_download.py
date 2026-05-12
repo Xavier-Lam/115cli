@@ -2,7 +2,6 @@ import json
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from cli115.cli import build_parser, load_config
 from cli115.client.models import (
     CloudTask,
     DownloadQuota,
@@ -18,14 +17,7 @@ from cli115.cmds.download import (
     DownloadQuotaCommand,
     DownloadRetryCommand,
 )
-from cli115.credentials import CredentialManager
-from tests.helpers import make_lazy
-
-
-def _build_parser():
-    cfg = load_config()
-    cm = CredentialManager(cfg)
-    return build_parser(cfg, cm)
+from tests.helpers import make_lazy, make_parser
 
 
 def _make_task(
@@ -57,7 +49,7 @@ class TestDownloadCommand:
         mock_client.download.quota.return_value = DownloadQuota(quota=2985, total=3000)
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "quota", "--format", "json"])
         cmds["download"].execute(args)
 
@@ -71,7 +63,7 @@ class TestDownloadCommand:
         mock_client.download.list.return_value = make_lazy([_make_task()])
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "list", "--format", "json"])
         cmds["download"].execute(args)
 
@@ -88,7 +80,7 @@ class TestDownloadCommand:
         )
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["download", "list", "--filter", "completed", "--format", "json"]
         )
@@ -103,7 +95,7 @@ class TestDownloadCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "delete", "hash1", "hash2"])
         cmds["download"].execute(args)
 
@@ -118,7 +110,7 @@ class TestDownloadCommand:
         mock_client.download.add_urls.return_value = [_make_task()]
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "add", "https://example.com/file.png"])
         cmds["download"].execute(args)
 
@@ -133,7 +125,7 @@ class TestDownloadCommand:
         mock_client.download.add_urls.return_value = [_make_task()]
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["download", "add", "--dest", "/my/folder", "https://example.com/file.png"]
         )
@@ -152,7 +144,7 @@ class TestDownloadCommand:
         ]
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             [
                 "download",
@@ -177,7 +169,7 @@ class TestDownloadCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "clear"])
         cmds["download"].execute(args)
 
@@ -189,7 +181,7 @@ class TestDownloadCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "clear", "--filter", "completed"])
         cmds["download"].execute(args)
 
@@ -204,7 +196,7 @@ class TestDownloadCommand:
         )
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(
             ["download", "status", "abc123hash", "--format", "json"]
         )
@@ -219,7 +211,7 @@ class TestDownloadCommand:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
 
-        parser, cmds = _build_parser()
+        parser, cmds = make_parser()
         args = parser.parse_args(["download", "retry", "hash1"])
         cmds["download"].execute(args)
 

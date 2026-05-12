@@ -30,6 +30,8 @@ setup(
         "p115cipher==0.0.4",
         "blinker",
         "httpx",
+        "bottle",
+        "m3u8",
         "pathspec",
         "tqdm",
     ],

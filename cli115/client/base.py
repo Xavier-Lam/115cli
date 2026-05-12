@@ -7,6 +7,7 @@ from os import PathLike
 from typing import BinaryIO, Sequence
 
 import httpx
+import m3u8
 
 from cli115.client.models import (
     AccountInfo,
@@ -42,11 +43,13 @@ class Client(ABC):
         file: FileClient,
         download: DownloadClient,
         share: ShareClient,
+        stream: StreamClient,
     ):
         self._account = account
         self._file = file
         self._download = download
         self._share = share
+        self._stream = stream
 
     @property
     def account(self) -> AccountClient:
@@ -67,6 +70,11 @@ class Client(ABC):
     def share(self) -> ShareClient:
         """Access share-link operations."""
         return self._share
+
+    @property
+    def stream(self) -> StreamClient:
+        """Access video streaming operations."""
+        return self._stream
 
 
 class AccountClient(ABC):
@@ -691,6 +699,18 @@ class ShareClient(ABC):
         Returns:
             Response data from the server, including ``pid`` (the folder ID
             where the entries were saved).
+        """
+
+
+class StreamClient(ABC):
+    """Abstract interface for video streaming operations."""
+
+    @abstractmethod
+    def get_m3u8(self, pickcode: str | File, /) -> m3u8.M3U8:
+        """Get the master m3u8 playlist for a video by pickcode.
+
+        Returns:
+            A parsed M3U8 object for the master (or sole) playlist.
         """
 
 
