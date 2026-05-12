@@ -57,19 +57,32 @@ class StreamCommand(BaseCommand):
 
         if entry.is_directory:
             raise CommandLineError(f"path is a directory: {entry.path or entry.id}")
-        if not entry.pickcode:
-            raise CommandLineError(f"file has no pickcode: {entry.path or entry.id}")
 
         host = args.host
         port = args.port
         base_url = f"http://{host}:{port}"
 
-        video_info = client.stream.info(entry.pickcode)
+        video_info = client.stream.info(entry)
         if "video_url" not in video_info:
             if "queue_url" in video_info:
+                try:
+                    resp = client.stream.transcode_status(entry)
+                    print(f"videos in queue before this one: {resp['count']}")
+                    print(f"estimated time remaining: {int(resp['time']/60)}m")
+
+                    status = resp["status"]
+                    if status == 3:
+                        print("acceleration is already active")
+                    elif status not in (2, 4):  # not transcoding or already accelerated
+                        account = client.account.info()
+                        if account.vip:
+                            client.stream.accelerate_transcode(entry)
+                            print("VIP acceleration applied")
+                except Exception as e:
+                    self.warn(f"an error occurred while checking transcode status: {e}")
+
                 raise CommandLineError(
-                    "video is still being processed by the server, "
-                    "please try again later"
+                    "video is still being processed, please try again later"
                 )
             raise CommandLineError(
                 "video stream is not available, check if the file is a valid video"

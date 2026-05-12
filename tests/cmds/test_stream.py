@@ -9,8 +9,9 @@ from wsgiref.simple_server import make_server
 import m3u8
 import pytest
 
-from cli115.client.models import File
+from cli115.client.models import AccountInfo, File
 from cli115.cmds.stream import _QuietWSGIRequestHandler, _ThreadingWSGIServer, StreamApp
+from cli115.exceptions import CommandLineError
 from tests.helpers import make_parser
 
 _MASTER_M3U8_VARIANT = (
@@ -221,3 +222,121 @@ class TestStreamCommand:
         assert call_port == 8080
         out = capsys.readouterr()
         assert "http://0.0.0.0:8080/main.m3u8" in out.out
+
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_queue_shows_count_and_time(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 1,
+            "count": 1016,
+            "time": 1795,
+            "priority": 1,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="user", user_id=1, vip=False, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4"])
+        with pytest.raises(CommandLineError):
+            commands["stream"].execute(args)
+
+        out = capsys.readouterr().out
+        assert "1016" in out
+        assert "29m" in out
+
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_vip_auto_accelerates(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 1,
+            "count": 50,
+            "time": 300,
+            "priority": 1,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="vipuser", user_id=2, vip=True, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4"])
+        with pytest.raises(CommandLineError):
+            commands["stream"].execute(args)
+
+        mock_client.stream.accelerate_transcode.assert_called_once()
+        out = capsys.readouterr().out
+        assert "VIP acceleration applied" in out
+
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_already_accelerated_skips_boost(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 3,
+            "count": 0,
+            "time": 120,
+            "priority": 2,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="vipuser", user_id=2, vip=True, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4"])
+        with pytest.raises(CommandLineError):
+            commands["stream"].execute(args)
+
+        mock_client.stream.accelerate_transcode.assert_not_called()
+        out = capsys.readouterr().out
+        assert "already active" in out
+
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_non_vip_does_not_accelerate(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 1,
+            "count": 100,
+            "time": 600,
+            "priority": 1,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="freeuser", user_id=3, vip=False, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4"])
+        with pytest.raises(CommandLineError):
+            commands["stream"].execute(args)
+
+        mock_client.stream.accelerate_transcode.assert_not_called()

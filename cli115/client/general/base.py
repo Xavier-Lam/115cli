@@ -110,8 +110,10 @@ class APIClient(httpx.Client):
 
 
 class Endpoint:
+    MAIN = "https://115.com"
     MY = "https://my.115.com"
     LIXIAN = "https://lixian.115.com"
     PROAPI = "https://proapi.115.com"
+    TRANSCODE = "https://transcode.115.com"
     UPLB = "https://uplb.115.com"
     WEBAPI = "https://webapi.115.com"
