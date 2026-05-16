@@ -144,11 +144,84 @@ class TestStreamApp:
                 )
             assert exc_info.value.code == 404
 
+    def test_key_rejects_unauthenticated(self):
+        app = StreamApp(
+            base_url="http://127.0.0.1",
+            master=m3u8.loads(_MASTER_M3U8_VARIANT),
+            api=MagicMock(),
+            access_key="testkey",
+        )
+        with _start_test_server(app) as port:
+            with pytest.raises(HTTPError) as exc_info:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/main.m3u8")
+            assert exc_info.value.code == 403
+
+    def test_key_rejects_wrong_key(self):
+        app = StreamApp(
+            base_url="http://127.0.0.1",
+            master=m3u8.loads(_MASTER_M3U8_VARIANT),
+            api=MagicMock(),
+            access_key="testkey",
+        )
+        with _start_test_server(app) as port:
+            with pytest.raises(HTTPError) as exc_info:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/main.m3u8?key=wrong")
+            assert exc_info.value.code == 403
+
+    def test_key_allows_correct_key(self):
+        app = StreamApp(
+            base_url="http://127.0.0.1",
+            master=m3u8.loads(_MASTER_M3U8_VARIANT),
+            api=MagicMock(),
+            access_key="testkey",
+        )
+        with _start_test_server(app) as port:
+            resp = urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/main.m3u8?key=testkey"
+            )
+            assert resp.status == 200
+
+    def test_key_in_master_quality_urls(self):
+        app = StreamApp(
+            base_url="http://127.0.0.1",
+            master=m3u8.loads(_MASTER_M3U8_VARIANT),
+            api=MagicMock(),
+            access_key="testkey",
+        )
+        with _start_test_server(app) as port:
+            resp = urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/main.m3u8?key=testkey"
+            )
+            body = resp.read().decode()
+            assert "?key=testkey" in body
+
+    def test_key_in_quality_segment_urls(self):
+        mock_api = MagicMock()
+        mock_api.get.return_value.content = _QUALITY_M3U8.encode()
+        mock_api.get.return_value.status_code = 200
+        mock_api.get.return_value.headers = {}
+        app = StreamApp(
+            base_url="http://127.0.0.1",
+            master=m3u8.loads(_MASTER_M3U8_VARIANT),
+            api=mock_api,
+            access_key="testkey",
+        )
+        with _start_test_server(app) as port:
+            resp = urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/1200000.m3u8?key=testkey"
+            )
+            body = resp.read().decode()
+            assert "/segments/" in body
+            assert "?key=testkey" in body
+
 
 class TestStreamCommand:
+    @patch("cli115.cmds.stream.secrets.token_urlsafe", return_value="testtoken")
     @patch("cli115.cmds.stream.make_server")
     @patch("cli115.cmds.stream.StreamCommand._create_client")
-    def test_variant_stream_prints_urls(self, mock_create, mock_make_server, capsys):
+    def test_variant_stream_prints_urls(
+        self, mock_create, mock_make_server, mock_token, capsys
+    ):
         mock_client = MagicMock()
         mock_client.file.stat.return_value = _make_file("abc123")
 
@@ -172,8 +245,8 @@ class TestStreamCommand:
         assert "600000.m3u8" in out.out
         assert "854x480" in out.out
         assert "CTRL+C" in out.out
-        assert "not protected" in out.err
         assert "Total bytes read" in out.out
+        assert "?key=testtoken" in out.out
 
     @patch("cli115.cmds.stream.make_server")
     @patch("cli115.cmds.stream.StreamCommand._create_client")
@@ -222,6 +295,67 @@ class TestStreamCommand:
         assert call_port == 8080
         out = capsys.readouterr()
         assert "http://0.0.0.0:8080/main.m3u8" in out.out
+
+    @patch("cli115.cmds.stream.secrets.token_urlsafe", return_value="autokey")
+    @patch("cli115.cmds.stream.make_server")
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_auto_key_in_urls(self, mock_create, mock_make_server, mock_token, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
+        mock_client.stream.get_m3u8.return_value = m3u8.loads(_MASTER_M3U8_VARIANT)
+        mock_create.return_value = mock_client
+
+        mock_httpd = MagicMock()
+        mock_make_server.return_value = mock_httpd
+        mock_httpd.serve_forever.side_effect = KeyboardInterrupt
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4"])
+        commands["stream"].execute(args)
+
+        out = capsys.readouterr().out
+        assert "?key=autokey" in out
+
+    @patch("cli115.cmds.stream.make_server")
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_custom_key(self, mock_create, mock_make_server, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
+        mock_client.stream.get_m3u8.return_value = m3u8.loads(_MASTER_M3U8_VARIANT)
+        mock_create.return_value = mock_client
+
+        mock_httpd = MagicMock()
+        mock_make_server.return_value = mock_httpd
+        mock_httpd.serve_forever.side_effect = KeyboardInterrupt
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4", "-k", "mykey"])
+        commands["stream"].execute(args)
+
+        out = capsys.readouterr().out
+        assert "?key=mykey" in out
+
+    @patch("cli115.cmds.stream.make_server")
+    @patch("cli115.cmds.stream.StreamCommand._create_client")
+    def test_unsafe_key(self, mock_create, mock_make_server, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
+        mock_client.stream.get_m3u8.return_value = m3u8.loads(_MASTER_M3U8_VARIANT)
+        mock_create.return_value = mock_client
+
+        mock_httpd = MagicMock()
+        mock_make_server.return_value = mock_httpd
+        mock_httpd.serve_forever.side_effect = KeyboardInterrupt
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["stream", "/video.mp4", "-k", "?"])
+        commands["stream"].execute(args)
+
+        out = capsys.readouterr().out
+        assert "?key=%3F" in out
 
     @patch("cli115.cmds.stream.StreamCommand._create_client")
     def test_queue_shows_count_and_time(self, mock_create, capsys):

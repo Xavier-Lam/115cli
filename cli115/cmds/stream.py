@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import secrets
 import threading
 from socketserver import ThreadingMixIn
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 
 import bottle
@@ -40,6 +41,19 @@ class StreamCommand(TranscodeCommand):
             action="store_true",
             help="Enable verbose logging for the proxy server",
         )
+        key_group = parser.add_mutually_exclusive_group()
+        key_group.add_argument(
+            "-k",
+            "--key",
+            default=None,
+            metavar="KEY",
+            help="Set a custom access key",
+        )
+        key_group.add_argument(
+            "--no-key",
+            action="store_true",
+            help="Disable key-based access protection",
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         client = self._create_client()
@@ -60,18 +74,27 @@ class StreamCommand(TranscodeCommand):
         host = args.host
         port = args.port
         base_url = f"http://{host}:{port}"
-        app = StreamApp(base_url=base_url, master=master, api=client.stream._api)
 
-        self.warn(
-            "the stream proxy is not protected — anyone with access to this machine "
-            "can connect to it."
+        if args.no_key:
+            access_key = ""
+        elif args.key:
+            access_key = args.key
+        else:
+            access_key = secrets.token_urlsafe(16)
+
+        app = StreamApp(
+            base_url=base_url,
+            master=master,
+            api=client.stream._api,
+            access_key=access_key,
         )
-        print(f"\nStream: {base_url}/main.m3u8")
+
+        print(f"\nStream: {base_url}/main.m3u8{app.qs}")
         for playlist in master.playlists:
             si = playlist.stream_info
             res = f"{si.resolution[0]}x{si.resolution[1]}"
             bw = _format_bandwidth(si.bandwidth)
-            print(f"  [{res}, {bw}] {base_url}/{si.bandwidth}.m3u8")
+            print(f"  [{res}, {bw}] {base_url}/{si.bandwidth}.m3u8{app.qs}")
         print("\nPress CTRL+C to stop the proxy server.")
 
         class _Handler(WSGIRequestHandler):
@@ -96,14 +119,21 @@ class StreamApp(bottle.Bottle):
         "content-length",
     )
 
-    def __init__(self, base_url: str, master: m3u8.M3U8, api: httpx.Client) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        master: m3u8.M3U8,
+        api: httpx.Client,
+        access_key: str = "",
+    ) -> None:
         super().__init__()
         self._base_url = base_url
+        self._access_key = access_key
         self._m3u8_map = {}
         for playlist in master.playlists:
             bandwidth = playlist.stream_info.bandwidth
             self._m3u8_map[str(bandwidth)] = playlist.absolute_uri
-            playlist.uri = f"{base_url}/{bandwidth}.m3u8"
+            playlist.uri = f"{base_url}/{bandwidth}.m3u8{self.qs}"
         self._master = master
         self._api = api
         self._segment_map = {}
@@ -111,10 +141,25 @@ class StreamApp(bottle.Bottle):
         self._stats = {"read_bytes": 0}
         self.init()
 
+    @property
+    def qs(self) -> str:
+        return f"?key={quote(self._access_key)}" if self._access_key else ""
+
     def init(self):
-        self.route("/main.m3u8", callback=self._serve_master)
-        self.route("/<name>.m3u8", callback=self._serve_quality)
-        self.route("/segments/<path:path>", callback=self._serve_segment)
+        def check_key(callback):
+            def wrapper(*args, **kwargs):
+                if (
+                    self._access_key
+                    and bottle.request.query.get("key") != self._access_key
+                ):
+                    bottle.abort(403, "invalid or missing key")
+                return callback(*args, **kwargs)
+
+            return wrapper
+
+        self.route("/main.m3u8", callback=check_key(self._serve_master))
+        self.route("/<name>.m3u8", callback=check_key(self._serve_quality))
+        self.route("/segments/<path:path>", callback=check_key(self._serve_segment))
 
     def _serve_master(self) -> str:
         bottle.response.content_type = "application/vnd.apple.mpegurl"
@@ -131,10 +176,10 @@ class StreamApp(bottle.Bottle):
         parsed = m3u8.loads(resp.content.decode("utf-8"), uri=url)
         for seg in parsed.segments:
             parsed_url = urlparse(seg.absolute_uri)
-            key = parsed_url.hostname + parsed_url.path
+            seg_key = parsed_url.hostname + parsed_url.path
             with self._segment_lock:
-                self._segment_map[key] = seg.absolute_uri
-            seg.uri = f"{self._base_url}/segments/{key}"
+                self._segment_map[seg_key] = seg.absolute_uri
+            seg.uri = f"{self._base_url}/segments/{seg_key}{self.qs}"
 
         for header, value in resp.headers.items():
             if header.lower() in self._proxy_headers:
