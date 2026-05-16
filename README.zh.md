@@ -89,6 +89,8 @@ pip install 115cli
 
 # 串流
 115cli stream /path/to/video.mp4
+# 转码(使视频可用于串流)
+115cli transcode /path/to/video.mp4
 ```
 
 > 注意: 某些创建云下载任务的操作可能会触发图形验证码, 目前客户端不支持处理验证码.

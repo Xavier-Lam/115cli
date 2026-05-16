@@ -89,6 +89,8 @@ After [authenticating](#authentication) with `115cli login`, you can use the `11
 
 # Stream a video file
 115cli stream /path/to/video.mp4
+# Transcode a video file to make it available for streaming
+115cli transcode /path/to/video.mp4
 ```
 
 > **Note:** Creating cloud download tasks may trigger a captcha challenge. This is currently not supported by the client.

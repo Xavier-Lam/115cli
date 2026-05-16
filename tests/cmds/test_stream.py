@@ -340,3 +340,159 @@ class TestStreamCommand:
             commands["stream"].execute(args)
 
         mock_client.stream.accelerate_transcode.assert_not_called()
+
+
+class TestTranscodeCommand:
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_already_available(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "/video.mp4"])
+        commands["transcode"].execute(args)
+
+        out = capsys.readouterr().out
+        assert "already available for streaming" in out
+        mock_client.stream.transcode_status.assert_not_called()
+
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_by_id(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.file.id.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {"video_url": "https://hls.115.com/play"}
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "--id", "3426493810175165487"])
+        commands["transcode"].execute(args)
+
+        mock_client.file.id.assert_called_once_with("3426493810175165487")
+
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_invalid_video_raises(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {}
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "/video.mp4"])
+        with pytest.raises(CommandLineError, match="not available"):
+            commands["transcode"].execute(args)
+
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_queue_shows_count_and_time(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 1,
+            "count": 1016,
+            "time": 1795,
+            "priority": 1,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="user", user_id=1, vip=False, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "/video.mp4"])
+        commands["transcode"].execute(args)
+
+        out = capsys.readouterr().out
+        assert "1016" in out
+        assert "29m" in out
+
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_vip_auto_accelerates(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 1,
+            "count": 50,
+            "time": 300,
+            "priority": 1,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="vipuser", user_id=2, vip=True, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "/video.mp4"])
+        commands["transcode"].execute(args)
+
+        mock_client.stream.accelerate_transcode.assert_called_once()
+        out = capsys.readouterr().out
+        assert "VIP acceleration applied" in out
+
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_already_accelerated_skips_boost(self, mock_create, capsys):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 3,
+            "count": 0,
+            "time": 120,
+            "priority": 2,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="vipuser", user_id=2, vip=True, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "/video.mp4"])
+        commands["transcode"].execute(args)
+
+        mock_client.stream.accelerate_transcode.assert_not_called()
+        out = capsys.readouterr().out
+        assert "already active" in out
+
+    @patch("cli115.cmds.transcode.TranscodeCommand._create_client")
+    def test_non_vip_does_not_accelerate(self, mock_create):
+        mock_client = MagicMock()
+        mock_client.file.stat.return_value = _make_file("abc123")
+        mock_client.stream.info.return_value = {
+            "queue_url": "https://transcode.115.com/check",
+            "sha1": "a" * 40,
+            "file_id": "200",
+        }
+        mock_client.stream.transcode_status.return_value = {
+            "result": 0,
+            "status": 1,
+            "count": 100,
+            "time": 600,
+            "priority": 1,
+        }
+        mock_client.account.info.return_value = AccountInfo(
+            user_name="freeuser", user_id=3, vip=False, expire=None
+        )
+        mock_create.return_value = mock_client
+
+        parser, commands = make_parser()
+        args = parser.parse_args(["transcode", "/video.mp4"])
+        commands["transcode"].execute(args)
+
+        mock_client.stream.accelerate_transcode.assert_not_called()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 import threading
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse
@@ -13,22 +12,15 @@ import bottle
 import httpx
 import m3u8
 
-from cli115.cmds.base import BaseCommand
+from cli115.cmds.transcode import TranscodeCommand
 from cli115.exceptions import CommandLineError
 
 
-class StreamCommand(BaseCommand):
+class StreamCommand(TranscodeCommand):
     """Stream a 115 video file via a local HLS proxy server."""
 
     def register(self, parser: argparse.ArgumentParser) -> None:
         super().register(parser)
-        parser.add_argument("path", nargs="?", help="Remote file path on 115")
-        parser.add_argument(
-            "--id",
-            dest="file_id",
-            default=None,
-            help="Stream by remote file ID instead of path",
-        )
         parser.add_argument(
             "-p",
             "--port",
@@ -43,61 +35,29 @@ class StreamCommand(BaseCommand):
         )
 
     def execute(self, args: argparse.Namespace) -> None:
-        if not args.file_id and not args.path:
-            raise CommandLineError("either 'path' or '--id' is required")
-        if args.file_id and args.path:
-            raise CommandLineError("use either 'path' or '--id', not both")
-
         client = self._create_client()
-
-        if args.path:
-            entry = client.file.stat(args.path)
-        else:
-            entry = client.file.id(args.file_id)
-
-        if entry.is_directory:
-            raise CommandLineError(f"path is a directory: {entry.path or entry.id}")
-
-        host = args.host
-        port = args.port
-        base_url = f"http://{host}:{port}"
-
-        video_info = client.stream.info(entry)
-        if "video_url" not in video_info:
-            if "queue_url" in video_info:
-                try:
-                    resp = client.stream.transcode_status(entry)
-                    print(f"videos in queue before this one: {resp['count']}")
-                    print(f"estimated time remaining: {int(resp['time']/60)}m")
-
-                    status = resp["status"]
-                    if status == 3:
-                        print("acceleration is already active")
-                    elif status not in (2, 4):  # not transcoding or already accelerated
-                        account = client.account.info()
-                        if account.vip:
-                            client.stream.accelerate_transcode(entry)
-                            print("VIP acceleration applied")
-                except Exception as e:
-                    self.warn(f"an error occurred while checking transcode status: {e}")
-
-                raise CommandLineError(
-                    "video is still being processed, please try again later"
-                )
+        entry = self._get_entry(args, client)
+        if not self._is_available(client, entry):
+            try:
+                self._transcode(client, entry)
+            except Exception as e:
+                self.warn(f"an error occurred while checking transcode status: {e}")
             raise CommandLineError(
-                "video stream is not available, check if the file is a valid video"
+                "video is still being processed, please try again later"
             )
 
         master = client.stream.get_m3u8(entry.pickcode)
         if not master.is_variant:
             raise NotImplementedError("non-variant playlists are not supported")
 
+        host = args.host
+        port = args.port
+        base_url = f"http://{host}:{port}"
         app = StreamApp(base_url=base_url, master=master, api=client.stream._api)
 
-        print(
-            "Warning: the stream proxy is not protected — anyone with access "
-            "to this machine can connect to it.",
-            file=sys.stderr,
+        self.warn(
+            "the stream proxy is not protected — anyone with access to this machine "
+            "can connect to it."
         )
         print(f"\nStream: {base_url}/main.m3u8")
         for playlist in master.playlists:

@@ -72,8 +72,8 @@ class TestBuildParser:
             "share",
             "stat",
             "stream",
+            "transcode",
             "upload",
-            "share",
             "url",
         ]
         for cmd in expected:
