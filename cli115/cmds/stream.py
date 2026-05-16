@@ -6,7 +6,7 @@ import argparse
 import threading
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse
-from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
+from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 
 import bottle
 import httpx
@@ -14,6 +14,7 @@ import m3u8
 
 from cli115.cmds.transcode import TranscodeCommand
 from cli115.exceptions import CommandLineError
+from cli115.helpers import format_size
 
 
 class StreamCommand(TranscodeCommand):
@@ -32,6 +33,12 @@ class StreamCommand(TranscodeCommand):
             "--host",
             default="127.0.0.1",
             help="Local host to bind to (default: 127.0.0.1)",
+        )
+        parser.add_argument(
+            "-v",
+            "--verbose",
+            action="store_true",
+            help="Enable verbose logging for the proxy server",
         )
 
     def execute(self, args: argparse.Namespace) -> None:
@@ -67,13 +74,18 @@ class StreamCommand(TranscodeCommand):
             print(f"  [{res}, {bw}] {base_url}/{si.bandwidth}.m3u8")
         print("\nPress CTRL+C to stop the proxy server.")
 
-        httpd = make_server(
-            host, port, app, _ThreadingWSGIServer, _QuietWSGIRequestHandler
-        )
+        class _Handler(WSGIRequestHandler):
+            if not args.verbose:
+
+                def log_message(self, *args, **kwargs) -> None:
+                    pass
+
+        httpd = make_server(host, port, app, _ThreadingWSGIServer, _Handler)
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             pass
+        print(f"\nTotal bytes read: {format_size(app._stats['read_bytes'])}")
 
 
 class StreamApp(bottle.Bottle):
@@ -96,6 +108,7 @@ class StreamApp(bottle.Bottle):
         self._api = api
         self._segment_map = {}
         self._segment_lock = threading.Lock()
+        self._stats = {"read_bytes": 0}
         self.init()
 
     def init(self):
@@ -144,6 +157,8 @@ class StreamApp(bottle.Bottle):
                     if header.lower() in self._proxy_headers:
                         bottle.response.set_header(header, value)
                 for chunk in resp.iter_bytes(chunk_size=65536):
+                    with self._segment_lock:
+                        self._stats["read_bytes"] += len(chunk)
                     yield chunk
 
         return _gen()
@@ -151,14 +166,6 @@ class StreamApp(bottle.Bottle):
 
 class _ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
     daemon_threads = True
-
-
-class _QuietWSGIRequestHandler(WSGIRequestHandler):
-    def log_message(self, *args, **kwargs) -> None:
-        pass
-
-    def log_request(self, *args, **kwargs) -> None:
-        pass
 
 
 def _format_bandwidth(bw: int) -> str:

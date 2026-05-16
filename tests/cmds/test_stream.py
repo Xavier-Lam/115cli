@@ -4,13 +4,13 @@ import threading
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 import urllib.request
-from wsgiref.simple_server import make_server
+from wsgiref.simple_server import make_server, WSGIRequestHandler
 
 import m3u8
 import pytest
 
 from cli115.client.models import AccountInfo, File
-from cli115.cmds.stream import _QuietWSGIRequestHandler, _ThreadingWSGIServer, StreamApp
+from cli115.cmds.stream import _ThreadingWSGIServer, StreamApp
 from cli115.exceptions import CommandLineError
 from tests.helpers import make_parser
 
@@ -33,9 +33,7 @@ _QUALITY_M3U8 = (
 
 @contextmanager
 def _start_test_server(app):
-    httpd = make_server(
-        "127.0.0.1", 0, app, _ThreadingWSGIServer, _QuietWSGIRequestHandler
-    )
+    httpd = make_server("127.0.0.1", 0, app, _ThreadingWSGIServer, WSGIRequestHandler)
     port = httpd.server_address[1]
     t = threading.Thread(
         target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
@@ -120,6 +118,7 @@ class TestStreamApp:
             resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/segments/{seg_key}")
             assert resp.status == 200
             assert resp.read() == b"fake-ts-content"
+            assert app._stats["read_bytes"] == len(b"fake-ts-content")
 
     def test_unknown_quality_returns_404(self):
         app = StreamApp(
@@ -174,6 +173,7 @@ class TestStreamCommand:
         assert "854x480" in out.out
         assert "CTRL+C" in out.out
         assert "not protected" in out.err
+        assert "Total bytes read" in out.out
 
     @patch("cli115.cmds.stream.make_server")
     @patch("cli115.cmds.stream.StreamCommand._create_client")
