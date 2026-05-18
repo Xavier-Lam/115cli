@@ -83,7 +83,6 @@ class StreamCommand(TranscodeCommand):
             access_key = secrets.token_urlsafe(16)
 
         app = StreamApp(
-            base_url=base_url,
             master=master,
             api=client.stream._api,
             access_key=access_key,
@@ -121,19 +120,16 @@ class StreamApp(bottle.Bottle):
 
     def __init__(
         self,
-        base_url: str,
         master: m3u8.M3U8,
         api: httpx.Client,
         access_key: str = "",
     ) -> None:
         super().__init__()
-        self._base_url = base_url
         self._access_key = access_key
-        self._m3u8_map = {}
-        for playlist in master.playlists:
-            bandwidth = playlist.stream_info.bandwidth
-            self._m3u8_map[str(bandwidth)] = playlist.absolute_uri
-            playlist.uri = f"{base_url}/{bandwidth}.m3u8{self.qs}"
+        self._m3u8_map = {
+            str(playlist.stream_info.bandwidth): playlist.absolute_uri
+            for playlist in master.playlists
+        }
         self._master = master
         self._api = api
         self._segment_map = {}
@@ -163,7 +159,11 @@ class StreamApp(bottle.Bottle):
 
     def _serve_master(self) -> str:
         bottle.response.content_type = "application/vnd.apple.mpegurl"
-        return self._master.dumps()
+        with self._segment_lock:
+            for playlist in self._master.playlists:
+                bandwidth = playlist.stream_info.bandwidth
+                playlist.uri = f"{self.base_url}/{bandwidth}.m3u8{self.qs}"
+            return self._master.dumps()
 
     def _serve_quality(self, name: str) -> str:
         url = self._m3u8_map.get(name)
@@ -179,7 +179,7 @@ class StreamApp(bottle.Bottle):
             seg_key = parsed_url.hostname + parsed_url.path
             with self._segment_lock:
                 self._segment_map[seg_key] = seg.absolute_uri
-            seg.uri = f"{self._base_url}/segments/{seg_key}{self.qs}"
+            seg.uri = f"{self.base_url}/segments/{seg_key}{self.qs}"
 
         for header, value in resp.headers.items():
             if header.lower() in self._proxy_headers:
@@ -193,6 +193,17 @@ class StreamApp(bottle.Bottle):
             bottle.abort(404, "unknown segment")
 
         return self._proxy(orig_url)
+
+    @property
+    def base_url(self) -> str:
+        req = bottle.request
+        scheme = req.get_header("X-Forwarded-Proto") or req.urlparts.scheme
+        host = (
+            req.get_header("X-Forwarded-Host")
+            or req.get_header("Host")
+            or req.urlparts.netloc
+        )
+        return f"{scheme}://{host}"
 
     def _proxy(self, url):
         def _gen():

@@ -66,7 +66,6 @@ def _make_file(pickcode="abc123"):
 class TestStreamApp:
     def test_serve_main_m3u8(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
         )
@@ -77,6 +76,7 @@ class TestStreamApp:
             assert "mpegurl" in ct.lower()
             body = resp.read().decode("utf-8")
             assert "#EXTM3U" in body
+            assert f"http://127.0.0.1:{port}/" in body
 
     def test_serve_quality_m3u8(self):
         mock_api = MagicMock()
@@ -84,7 +84,6 @@ class TestStreamApp:
         mock_api.get.return_value.status_code = 200
         mock_api.get.return_value.headers = {}
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=mock_api,
         )
@@ -94,6 +93,7 @@ class TestStreamApp:
             body = resp.read().decode("utf-8")
             assert "#EXTM3U" in body
             # segment should be rewritten to local proxy path
+            assert f"http://127.0.0.1:{port}/" in body
             assert "/segments/" in body
             assert "ts.115.com/seg1.ts" in body
 
@@ -107,7 +107,6 @@ class TestStreamApp:
         mock_api.stream.return_value.__exit__.return_value = False
 
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=mock_api,
         )
@@ -122,7 +121,6 @@ class TestStreamApp:
 
     def test_unknown_quality_returns_404(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
         )
@@ -133,7 +131,6 @@ class TestStreamApp:
 
     def test_unknown_segment_returns_404(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
         )
@@ -146,7 +143,6 @@ class TestStreamApp:
 
     def test_key_rejects_unauthenticated(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
             access_key="testkey",
@@ -158,7 +154,6 @@ class TestStreamApp:
 
     def test_key_rejects_wrong_key(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
             access_key="testkey",
@@ -170,7 +165,6 @@ class TestStreamApp:
 
     def test_key_allows_correct_key(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
             access_key="testkey",
@@ -183,7 +177,6 @@ class TestStreamApp:
 
     def test_key_in_master_quality_urls(self):
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=MagicMock(),
             access_key="testkey",
@@ -201,7 +194,6 @@ class TestStreamApp:
         mock_api.get.return_value.status_code = 200
         mock_api.get.return_value.headers = {}
         app = StreamApp(
-            base_url="http://127.0.0.1",
             master=m3u8.loads(_MASTER_M3U8_VARIANT),
             api=mock_api,
             access_key="testkey",
@@ -213,6 +205,24 @@ class TestStreamApp:
             body = resp.read().decode()
             assert "/segments/" in body
             assert "?key=testkey" in body
+
+    def test_reverse_proxy_uses_forwarded_headers(self):
+        app = StreamApp(
+            master=m3u8.loads(_MASTER_M3U8_VARIANT),
+            api=MagicMock(),
+        )
+        with _start_test_server(app) as port:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/main.m3u8",
+                headers={
+                    "X-Forwarded-Proto": "https",
+                    "X-Forwarded-Host": "stream.example.com",
+                },
+            )
+            resp = urllib.request.urlopen(req)
+            body = resp.read().decode()
+            assert "https://stream.example.com/" in body
+            assert "127.0.0.1" not in body
 
 
 class TestStreamCommand:
