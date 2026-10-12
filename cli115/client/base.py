@@ -32,6 +32,7 @@ from cli115.client.lazy import LazyPathCollection, LazyCollection
 DEFAULT_PAGE_SIZE = 200  # Default number of items to return in list operations
 MAX_PAGE_SIZE = 1150  # 1150 is the maximum page size allowed by the API
 MIN_INSTANT_UPLOAD_SIZE = 2 * 1024 * 1024  # Minimum file size for instant upload
+MAX_SIMPLE_UPLOAD_SIZE = 5 * 1024 * 1024 * 1024  # Maximum file size for simple upload
 
 
 class Client(ABC):

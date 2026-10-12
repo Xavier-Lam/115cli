@@ -4,6 +4,7 @@ from datetime import datetime
 
 from cli115.client.base import AccountClient as BaseAccountClient
 from cli115.client.models import AccountInfo, Usage
+from cli115.exceptions import APIError
 from .base import BaseClient, Endpoint
 
 
@@ -15,6 +16,8 @@ class AccountClient(BaseAccountClient, BaseClient):
             params={"ct": "ajax", "ac": "nav"},
         )
         data = resp.json()["data"]
+        if not data:
+            raise APIError("login required")
         expire_ts = data.get("expire")
         expire = datetime.fromtimestamp(expire_ts) if expire_ts else None
         return AccountInfo(

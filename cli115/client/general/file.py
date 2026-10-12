@@ -7,6 +7,7 @@ from cli115.client.base import (
     DEFAULT_PAGE_SIZE,
     FileClient as BaseFileClient,
     MAX_PAGE_SIZE,
+    MAX_SIMPLE_UPLOAD_SIZE,
     MIN_INSTANT_UPLOAD_SIZE,
     RemoteFile,
 )
@@ -293,6 +294,11 @@ class FileClient(BaseFileClient, BaseClient):
             file.set_stream(True)
 
         status.is_instant_uploaded = False
+        if file_size > MAX_SIMPLE_UPLOAD_SIZE and init_data is None:
+            raise OSError(
+                f"file size {file_size} bytes exceeds the simple upload limit of "
+                f"{MAX_SIMPLE_UPLOAD_SIZE} bytes and multipart upload is unavailable"
+            )
         with status.start_upload(file_size) as progress, progress.patch_file(file):
             if init_data and file_size > MULTIPART_UPLOAD_PART_SIZE:
                 resp = self._uploader.multipart_upload(

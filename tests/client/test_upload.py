@@ -10,6 +10,7 @@ import pytest
 import cli115.client.general.file as file_module
 import cli115.client.general.upload as upload_module
 from cli115.client import File, general, UploadStatus
+from cli115.client.base import MAX_SIMPLE_UPLOAD_SIZE
 from cli115.exceptions import InstantUploadNotAvailableError
 from tests.client.conftest import create_temp_file, upload_file
 
@@ -156,6 +157,18 @@ class TestInstantUpload:
         assert status.instant_upload_error is not None
         assert err_msg in str(status.instant_upload_error)
         mock_client.file._uploader.simple_upload.assert_called_once()
+
+    def test_oversized_file_without_multipart_raises(self, mock_client, monkeypatch):
+        # Avoid hashing a multi-gigabyte payload; only the reported size matters.
+        file_size = MAX_SIMPLE_UPLOAD_SIZE + 1
+        monkeypatch.setattr(file_module, "sha1_file", lambda file: ("SHA1", file_size))
+        mock_client.file._uploader.multipart_upload = MagicMock()
+        file = io.BytesIO(b"")
+        with pytest.raises(OSError, match="exceeds the simple upload limit"):
+            mock_client.file.upload("/remote/huge.bin", file)
+
+        mock_client.file._uploader.simple_upload.assert_not_called()
+        mock_client.file._uploader.multipart_upload.assert_not_called()
 
     @staticmethod
     def _fake_upload_response(name: str, sha1: str, size: int) -> dict:
